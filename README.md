@@ -169,7 +169,7 @@ This is a complete vehicle rental management system designed for shop owners to 
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/vehicle-rental-system.git
+git clone https://github.com/shaktibiplabDev/rentalsystem
 cd vehicle-rental-system
 ```
 
