@@ -1121,7 +1121,7 @@ class AuthController extends Controller
             ]
         );
 
-        $verificationLink = url("/api/verify-email/token/{$token}");
+        $verificationLink = url("/api/email/verify/token/{$token}");
 
         $subject = 'Verify Your Email - Vehicle Rental System';
         $htmlContent = "
