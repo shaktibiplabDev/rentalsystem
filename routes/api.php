@@ -32,6 +32,25 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 // =============================================
+// 📧 EMAIL VERIFICATION ROUTES (Public)
+// =============================================
+Route::prefix('email')->group(function () {
+    Route::post('/verify/send', [AuthController::class, 'sendEmailVerification']);
+    Route::post('/verify/otp', [AuthController::class, 'verifyEmailWithOtp']);
+    Route::get('/verify/token/{token}', [AuthController::class, 'verifyEmailWithToken']);
+    Route::post('/verify/resend', [AuthController::class, 'resendEmailVerification']);
+});
+
+// =============================================
+// 🔐 PASSWORD RESET ROUTES (Public)
+// =============================================
+Route::prefix('password')->group(function () {
+    Route::post('/forgot', [AuthController::class, 'sendPasswordResetOtp']);
+    Route::post('/reset', [AuthController::class, 'resetPasswordWithOtp']);
+    Route::post('/resend-otp', [AuthController::class, 'resendPasswordResetOtp']);
+});
+
+// =============================================
 // 🔒 PROTECTED ROUTES (Authentication Required)
 // =============================================
 Route::middleware('auth:sanctum')->group(function () {
