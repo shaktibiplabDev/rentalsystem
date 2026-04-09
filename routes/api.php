@@ -71,6 +71,8 @@ Route::prefix('auth/google')->group(function () {
     });
 });
 
+Route::post('/auth/google/complete-registration', [AuthController::class, 'completeGoogleRegistration']);
+
 // =============================================
 // 🔒 PROTECTED ROUTES (Authentication Required)
 // Security headers are automatically applied via bootstrap/app.php
