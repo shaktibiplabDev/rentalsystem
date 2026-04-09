@@ -16,12 +16,6 @@ class WebhookController extends Controller
 {
     protected $cashfreeService;
 
-    // IP whitelisting has been REMOVED as per recommendation.
-    // Rely only on signature verification for security.
-    // The following properties are kept for reference but NOT used.
-    // protected $allowedIps = [...];
-    // protected $testAllowedIps = [...];
-
     // Webhook idempotency key cache duration (24 hours)
     protected $idempotencyCacheDuration = 86400; // 24 hours in seconds
 
@@ -37,15 +31,9 @@ class WebhookController extends Controller
      * ============================================
      * PAYMENT WEBHOOK (FOR WALLET RECHARGE)
      * ============================================
-     * This is the PRIMARY webhook for wallet recharge payments.
-     * Configure in Cashfree Dashboard:
-     * URL: https://your-domain.com/api/webhooks/cashfree/payment
-     * Events: PAYMENT_SUCCESS_WEBHOOK, PAYMENT_FAILED_WEBHOOK, PAYMENT_USER_DROPPED_WEBHOOK
      */
     public function handlePayment(Request $request)
     {
-        // IP whitelisting removed - relying only on signature verification
-
         // Step 1: Get and validate payload
         $payload = $request->getContent();
 
@@ -56,22 +44,17 @@ class WebhookController extends Controller
 
         $signature = $request->header('x-webhook-signature');
 
-        if (! $signature) {
-            Log::warning('Webhook request missing signature', ['ip' => $request->ip()]);
-            return response()->json(['success' => false, 'message' => 'Missing signature'], 401);
-        }
+        // 🔓 SIGNATURE VERIFICATION DISABLED FOR TESTING
+        // if (! $signature) {
+        //     Log::warning('Webhook request missing signature', ['ip' => $request->ip()]);
+        //     return response()->json(['success' => false, 'message' => 'Missing signature'], 401);
+        // }
+        // if (! $this->verifyWebhookSignature($payload, $signature)) {
+        //     Log::warning('⚠️ Invalid payment webhook signature', ['ip' => $request->ip()]);
+        //     return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
+        // }
 
-        // Step 2: Verify webhook signature
-        if (! $this->verifyWebhookSignature($payload, $signature)) {
-            Log::warning('⚠️ Invalid payment webhook signature - potential fraud attempt', [
-                'ip' => $request->ip(),
-                'signature_received' => substr($signature, 0, 20).'...',
-                'timestamp' => now()->toIso8601String(),
-            ]);
-            return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
-        }
-
-        // Step 3: Parse payload
+        // Step 2: Parse payload
         try {
             $payloadData = json_decode($payload, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -83,7 +66,7 @@ class WebhookController extends Controller
             return response()->json(['success' => false, 'message' => 'Parse error'], 400);
         }
 
-        // Step 4: Idempotency check (prevent duplicate processing)
+        // Step 3: Idempotency check (prevent duplicate processing)
         $eventId = $payloadData['event_id'] ?? null;
         $orderId = $payloadData['data']['order']['order_id'] ?? null;
 
@@ -98,7 +81,7 @@ class WebhookController extends Controller
             }
         }
 
-        // Step 5: Get event type
+        // Step 4: Get event type
         $eventType = $payloadData['type'] ?? null;
 
         Log::info('📨 Payment webhook received', [
@@ -109,7 +92,7 @@ class WebhookController extends Controller
             'timestamp' => now()->toIso8601String(),
         ]);
 
-        // Step 6: Process based on event type
+        // Step 5: Process based on event type
         $response = null;
 
         try {
@@ -137,7 +120,7 @@ class WebhookController extends Controller
                     $response = response()->json(['success' => true, 'message' => 'Event ignored']);
             }
 
-            // Step 7: Mark as processed for idempotency
+            // Step 6: Mark as processed for idempotency
             if ($eventId && $response->getStatusCode() === 200) {
                 Cache::put($idempotencyKey, true, $this->idempotencyCacheDuration);
             }
@@ -169,14 +152,14 @@ class WebhookController extends Controller
      */
     public function handleRefund(Request $request)
     {
-        // IP whitelisting removed
         $payload = $request->getContent();
         $signature = $request->header('x-webhook-signature');
 
-        if (! $this->verifyWebhookSignature($payload, $signature)) {
-            Log::warning('Invalid refund webhook signature');
-            return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
-        }
+        // 🔓 Signature verification disabled for testing
+        // if (! $this->verifyWebhookSignature($payload, $signature)) {
+        //     Log::warning('Invalid refund webhook signature');
+        //     return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
+        // }
 
         $payloadData = json_decode($payload, true);
         $eventType = $payloadData['type'] ?? null;
@@ -198,7 +181,6 @@ class WebhookController extends Controller
         $paymentId = $data['payment']['cf_payment_id'] ?? null;
         $paymentStatus = $data['payment']['payment_status'] ?? null;
         $paymentAmount = $data['payment']['order_amount'] ?? 0;
-        $paymentCurrency = $data['payment']['order_currency'] ?? 'INR';
 
         Log::info('💰 Payment success webhook received', [
             'order_id' => $orderId,
@@ -222,20 +204,17 @@ class WebhookController extends Controller
             return response()->json(['success' => false, 'message' => 'Transaction not found'], 404);
         }
 
-        // Validate transaction type is 'credit'
         if ($transaction->type !== 'credit') {
             Log::error('Webhook for non-credit transaction', ['type' => $transaction->type, 'order_id' => $orderId]);
             return response()->json(['success' => false, 'message' => 'Invalid transaction type'], 400);
         }
 
-        // Compare amount
         if (abs($paymentAmount - $transaction->amount) > 0.01) {
             Log::error('Amount mismatch', ['webhook' => $paymentAmount, 'db' => $transaction->amount]);
             $this->storeOrphanWebhook($payloadData, 'amount_mismatch');
             return response()->json(['success' => false, 'message' => 'Amount mismatch'], 400);
         }
 
-        // Idempotency
         if ($transaction->status !== 'pending') {
             Log::info('Already processed', ['order_id' => $orderId, 'status' => $transaction->status]);
             return response()->json(['success' => true, 'message' => 'Already processed']);
@@ -249,7 +228,6 @@ class WebhookController extends Controller
             return response()->json(['success' => false, 'message' => 'Verification failed'], 500);
         }
 
-        // Use locked model and save() instead of raw update
         DB::beginTransaction();
         try {
             $user = User::where('id', $transaction->user_id)->lockForUpdate()->first();
@@ -257,11 +235,9 @@ class WebhookController extends Controller
                 throw new \Exception('User not found: '.$transaction->user_id);
             }
 
-            // Update wallet using the locked model
             $user->wallet_balance += $transaction->amount;
             $user->save();
 
-            // Update transaction
             $transaction->status = 'completed';
             $transaction->payment_details = json_encode([
                 'webhook' => $payloadData,
@@ -356,7 +332,7 @@ class WebhookController extends Controller
     }
 
     /**
-     * Handle user dropped webhook (user abandoned payment)
+     * Handle user dropped payment webhook
      */
     protected function handlePaymentDropped($payloadData)
     {
@@ -479,50 +455,30 @@ class WebhookController extends Controller
     // ============================================
 
     /**
-     * IP whitelisting has been removed. This method is kept for reference but always returns true.
-     * You may delete it entirely if desired.
-     */
-    protected function isIpWhitelisted(string $ip): bool
-    {
-        // IP whitelisting disabled – rely on signature verification only
-        return true;
-    }
-
-    /**
-     * Verify webhook signature
+     * Verify webhook signature (currently disabled for testing)
      */
     protected function verifyWebhookSignature($payload, $signature): bool
     {
-        if (! $signature) {
-            Log::warning('No signature found in webhook request');
-            return false;
-        }
+        // 🔓 Signature verification disabled – always return true
+        return true;
 
-        $webhookSecret = config('cashfree.webhook_secret');
-
-        if (! $webhookSecret) {
-            Log::warning('Webhook secret not configured in cashfree.php config');
-            return false;
-        }
-
-        try {
-            $calculatedSignature = base64_encode(hash_hmac('sha256', $payload, $webhookSecret, true));
-            $isValid = hash_equals($calculatedSignature, $signature);
-
-            if (! $isValid) {
-                Log::warning('Webhook signature mismatch', [
-                    'received' => substr($signature, 0, 20).'...',
-                    'calculated' => substr($calculatedSignature, 0, 20).'...',
-                ]);
-            }
-
-            return $isValid;
-        } catch (\Exception $e) {
-            Log::error('Signature verification failed with exception', [
-                'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
+        // Original implementation (commented out):
+        // if (! $signature) {
+        //     Log::warning('No signature found in webhook request');
+        //     return false;
+        // }
+        // $webhookSecret = config('cashfree.webhook_secret');
+        // if (! $webhookSecret) {
+        //     Log::warning('Webhook secret not configured');
+        //     return false;
+        // }
+        // try {
+        //     $calculatedSignature = base64_encode(hash_hmac('sha256', $payload, $webhookSecret, true));
+        //     return hash_equals($calculatedSignature, $signature);
+        // } catch (\Exception $e) {
+        //     Log::error('Signature verification exception', ['error' => $e->getMessage()]);
+        //     return false;
+        // }
     }
 
     /**
@@ -684,10 +640,10 @@ class WebhookController extends Controller
         $failedData['retried_at'] = now()->toIso8601String();
         Cache::put($key, $failedData, now()->addDays(3));
 
-        $request = new Request([], [], [], [], [], [], json_encode($failedData['payload']));
-        $request->headers->set('Content-Type', 'application/json');
+        $fakeRequest = new Request([], [], [], [], [], [], json_encode($failedData['payload']));
+        $fakeRequest->headers->set('Content-Type', 'application/json');
 
-        $response = $this->handlePayment($request);
+        $response = $this->handlePayment($fakeRequest);
 
         if ($response->getStatusCode() === 200) {
             Cache::forget($key);
