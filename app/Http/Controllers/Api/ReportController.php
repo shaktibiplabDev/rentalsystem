@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CustomerAccessLog;
 use App\Models\Rental;
 use App\Models\Vehicle;
+use Carbon\Carbon;
+use Exception;
+use Illuminate\Database\QueryException;
+use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
-use Exception;
-use Carbon\Carbon;
+use Illuminate\Validation\ValidationException;
 
 class ReportController extends Controller
 {
@@ -23,14 +25,14 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 Log::warning('Unauthenticated access to earnings report', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -44,7 +46,7 @@ class ReportController extends Controller
                 if ($request->has('start_date') && $request->has('end_date')) {
                     $validated = $request->validate([
                         'start_date' => 'required|date',
-                        'end_date' => 'required|date|after_or_equal:start_date'
+                        'end_date' => 'required|date|after_or_equal:start_date',
                     ]);
 
                     $startDate = Carbon::parse($validated['start_date'])->startOfDay();
@@ -54,7 +56,7 @@ class ReportController extends Controller
                 } elseif ($request->has('start_date') || $request->has('end_date')) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Both start_date and end_date are required for date range filtering'
+                        'message' => 'Both start_date and end_date are required for date range filtering',
                     ], 422);
                 }
 
@@ -62,7 +64,7 @@ class ReportController extends Controller
                 if ($request->has('month') && $request->has('year')) {
                     $validated = $request->validate([
                         'month' => 'required|integer|between:1,12',
-                        'year' => 'required|integer|min:2000|max:' . date('Y')
+                        'year' => 'required|integer|min:2000|max:'.date('Y'),
                     ]);
 
                     $startDate = Carbon::createFromDate($validated['year'], $validated['month'], 1)->startOfMonth();
@@ -86,7 +88,7 @@ class ReportController extends Controller
                         return [
                             'date' => $item->date,
                             'rental_count' => (int) $item->rental_count,
-                            'total' => (float) $item->total
+                            'total' => (float) $item->total,
                         ];
                     });
 
@@ -98,35 +100,35 @@ class ReportController extends Controller
                         : 0,
                     'highest_earning_day' => $dailyEarnings->first() ? [
                         'date' => $dailyEarnings->first()['date'],
-                        'amount' => $dailyEarnings->first()['total']
+                        'amount' => $dailyEarnings->first()['total'],
                     ] : null,
                     'total_rentals' => $dailyEarnings->sum('rental_count'),
                     'average_rental_value' => $dailyEarnings->sum('rental_count') > 0
                         ? round($totalEarnings / $dailyEarnings->sum('rental_count'), 2)
-                        : 0
+                        : 0,
                 ];
             } catch (ValidationException $e) {
                 Log::warning('Earnings report validation failed', [
                     'errors' => $e->errors(),
-                    'user_id' => $userId
+                    'user_id' => $userId,
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $e->errors()
+                    'errors' => $e->errors(),
                 ], 422);
             } catch (QueryException $e) {
                 Log::error('Database error generating earnings report', [
                     'user_id' => $userId,
                     'error' => $e->getMessage(),
-                    'sql' => method_exists($e, 'getSql') ? $e->getSql() : null
+                    'sql' => method_exists($e, 'getSql') ? $e->getSql() : null,
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate earnings report',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
 
@@ -139,21 +141,21 @@ class ReportController extends Controller
                         'start_date' => $validated['start_date'] ?? null,
                         'end_date' => $validated['end_date'] ?? null,
                         'month' => $request->month ?? null,
-                        'year' => $request->year ?? null
-                    ]
-                ]
+                        'year' => $request->year ?? null,
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Unexpected error generating earnings report', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate earnings report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -166,14 +168,14 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 Log::warning('Unauthenticated access to rentals report', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -185,7 +187,7 @@ class ReportController extends Controller
                 if ($request->has('start_date') && $request->has('end_date')) {
                     $validated = $request->validate([
                         'start_date' => 'required|date',
-                        'end_date' => 'required|date|after_or_equal:start_date'
+                        'end_date' => 'required|date|after_or_equal:start_date',
                     ]);
 
                     $startDate = Carbon::parse($validated['start_date'])->startOfDay();
@@ -195,14 +197,14 @@ class ReportController extends Controller
                 } elseif ($request->has('start_date') || $request->has('end_date')) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Both start_date and end_date are required for date range filtering'
+                        'message' => 'Both start_date and end_date are required for date range filtering',
                     ], 422);
                 }
 
                 // Single date filtering
                 if ($request->has('date')) {
                     $validated = $request->validate([
-                        'date' => 'required|date'
+                        'date' => 'required|date',
                     ]);
 
                     $date = Carbon::parse($validated['date']);
@@ -212,7 +214,7 @@ class ReportController extends Controller
                 // Status filtering
                 if ($request->has('status')) {
                     $validated = $request->validate([
-                        'status' => 'required|in:active,completed,cancelled'
+                        'status' => 'required|in:active,completed,cancelled',
                     ]);
 
                     $query->where('status', $validated['status']);
@@ -221,7 +223,7 @@ class ReportController extends Controller
                 // Vehicle filtering
                 if ($request->has('vehicle_id')) {
                     $validated = $request->validate([
-                        'vehicle_id' => 'required|exists:vehicles,id'
+                        'vehicle_id' => 'required|exists:vehicles,id',
                     ]);
 
                     $query->where('vehicle_id', $validated['vehicle_id']);
@@ -230,7 +232,7 @@ class ReportController extends Controller
                 // Customer filtering
                 if ($request->has('customer_id')) {
                     $validated = $request->validate([
-                        'customer_id' => 'required|exists:customers,id'
+                        'customer_id' => 'required|exists:customers,id',
                     ]);
 
                     $query->where('customer_id', $validated['customer_id']);
@@ -241,7 +243,7 @@ class ReportController extends Controller
                 $sortOrder = $request->get('sort_order', 'desc');
                 $allowedSortFields = ['id', 'created_at', 'start_time', 'end_time', 'total_price', 'status'];
 
-                if (!in_array($sortBy, $allowedSortFields)) {
+                if (! in_array($sortBy, $allowedSortFields)) {
                     $sortBy = 'created_at';
                 }
 
@@ -269,13 +271,13 @@ class ReportController extends Controller
                                 'id' => $rental->vehicle->id ?? null,
                                 'name' => $rental->vehicle->name ?? 'N/A',
                                 'number_plate' => $rental->vehicle->number_plate ?? 'N/A',
-                                'type' => $rental->vehicle->type ?? 'N/A'
+                                'type' => $rental->vehicle->type ?? 'N/A',
                             ],
                             'customer' => [
                                 'id' => $rental->customer->id ?? null,
                                 'name' => $rental->customer->name ?? 'N/A',
                                 'phone' => $rental->customer->phone ?? 'N/A',
-                                'address' => $rental->customer->address ?? 'N/A'
+                                'address' => $rental->customer->address ?? 'N/A',
                             ],
                             'start_time' => $rental->start_time,
                             'end_time' => $rental->end_time,
@@ -283,19 +285,19 @@ class ReportController extends Controller
                             'status' => $rental->status,
                             'total_price' => (float) ($rental->total_price ?? 0),
                             'created_at' => $rental->created_at,
-                            'updated_at' => $rental->updated_at
+                            'updated_at' => $rental->updated_at,
                         ];
                     } catch (Exception $e) {
                         Log::warning('Failed to format rental for report', [
                             'rental_id' => $rental->id,
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
                         ]);
 
                         return [
                             'id' => $rental->id,
                             'error' => 'Failed to load rental details',
                             'status' => $rental->status,
-                            'created_at' => $rental->created_at
+                            'created_at' => $rental->created_at,
                         ];
                     }
                 });
@@ -307,29 +309,29 @@ class ReportController extends Controller
                     'average_rental_value' => $rentals->total() > 0
                         ? round($query->sum('total_price') / $rentals->total(), 2)
                         : 0,
-                    'status_breakdown' => $this->getStatusBreakdown($userId, $request)
+                    'status_breakdown' => $this->getStatusBreakdown($userId, $request),
                 ];
             } catch (ValidationException $e) {
                 Log::warning('Rentals report validation failed', [
                     'errors' => $e->errors(),
-                    'user_id' => $userId
+                    'user_id' => $userId,
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $e->errors()
+                    'errors' => $e->errors(),
                 ], 422);
             } catch (QueryException $e) {
                 Log::error('Database error generating rentals report', [
                     'user_id' => $userId,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate rentals report',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
 
@@ -344,7 +346,7 @@ class ReportController extends Controller
                         'per_page' => $rentals->perPage(),
                         'total' => $rentals->total(),
                         'from' => $rentals->firstItem(),
-                        'to' => $rentals->lastItem()
+                        'to' => $rentals->lastItem(),
                     ],
                     'filters' => [
                         'start_date' => $request->start_date ?? null,
@@ -354,21 +356,21 @@ class ReportController extends Controller
                         'vehicle_id' => $request->vehicle_id ?? null,
                         'customer_id' => $request->customer_id ?? null,
                         'sort_by' => $sortBy ?? 'created_at',
-                        'sort_order' => $sortOrder ?? 'desc'
-                    ]
-                ]
+                        'sort_order' => $sortOrder ?? 'desc',
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Unexpected error generating rentals report', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate rentals report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -381,14 +383,14 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 Log::warning('Unauthenticated access to summary report', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -457,13 +459,13 @@ class ReportController extends Controller
             } catch (QueryException $e) {
                 Log::error('Database error generating summary report', [
                     'user_id' => $userId,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate summary report',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
 
@@ -479,8 +481,8 @@ class ReportController extends Controller
                             'end' => $currentMonthEnd->toDateString(),
                             'month' => $currentMonthStart->format('F Y'),
                             'month_number' => $currentMonthStart->month,
-                            'year' => $currentMonthStart->year
-                        ]
+                            'year' => $currentMonthStart->year,
+                        ],
                     ],
                     'previous_month' => [
                         'earnings' => $previousMonthEarnings,
@@ -488,8 +490,8 @@ class ReportController extends Controller
                         'period' => [
                             'start' => $previousMonthStart->toDateString(),
                             'end' => $previousMonthEnd->toDateString(),
-                            'month' => $previousMonthStart->format('F Y')
-                        ]
+                            'month' => $previousMonthStart->format('F Y'),
+                        ],
                     ],
                     'year_to_date' => [
                         'earnings' => $ytdEarnings,
@@ -497,27 +499,27 @@ class ReportController extends Controller
                         'period' => [
                             'year' => $year,
                             'start' => $ytdStart->toDateString(),
-                            'end' => $ytdEnd->toDateString()
-                        ]
+                            'end' => $ytdEnd->toDateString(),
+                        ],
                     ],
                     'growth' => [
                         'earnings' => round($earningsGrowth, 2),
                         'rentals' => round($rentalsGrowth, 2),
-                        'trend' => $earningsGrowth > 0 ? 'up' : ($earningsGrowth < 0 ? 'down' : 'stable')
-                    ]
-                ]
+                        'trend' => $earningsGrowth > 0 ? 'up' : ($earningsGrowth < 0 ? 'down' : 'stable'),
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Unexpected error generating summary report', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate summary report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -530,14 +532,14 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 Log::warning('Unauthenticated access to top vehicles report', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -589,17 +591,17 @@ class ReportController extends Controller
                                 'completed_count' => (int) $item->completed_count,
                                 'total_revenue' => (float) $item->total_revenue,
                                 'average_revenue' => (float) $item->average_revenue,
-                                'utilization_rate' => $this->calculateUtilizationRate($item->vehicle, $item->rental_count)
+                                'utilization_rate' => $this->calculateUtilizationRate($item->vehicle, $item->rental_count),
                             ];
                         } catch (Exception $e) {
                             Log::warning('Failed to format top vehicle', [
                                 'vehicle_id' => $item->vehicle_id,
-                                'error' => $e->getMessage()
+                                'error' => $e->getMessage(),
                             ]);
 
                             return [
                                 'vehicle_id' => $item->vehicle_id,
-                                'error' => 'Failed to load vehicle details'
+                                'error' => 'Failed to load vehicle details',
                             ];
                         }
                     });
@@ -611,18 +613,18 @@ class ReportController extends Controller
                     'total_rentals' => $query->count(),
                     'average_revenue_per_vehicle' => $topVehicles->count() > 0
                         ? round($topVehicles->avg('total_revenue'), 2)
-                        : 0
+                        : 0,
                 ];
             } catch (QueryException $e) {
                 Log::error('Database error generating top vehicles report', [
                     'user_id' => $userId,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate top vehicles report',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
 
@@ -634,21 +636,21 @@ class ReportController extends Controller
                     'filters' => [
                         'limit' => $limit,
                         'period' => $period,
-                        'period_label' => $this->getPeriodLabel($period)
-                    ]
-                ]
+                        'period_label' => $this->getPeriodLabel($period),
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Unexpected error generating top vehicles report', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate top vehicles report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -661,10 +663,10 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -697,17 +699,17 @@ class ReportController extends Controller
                                 'total_spent' => (float) $item->total_spent,
                                 'average_spent' => (float) $item->average_spent,
                                 'last_rental_date' => $item->last_rental_date,
-                                'days_since_last_rental' => Carbon::parse($item->last_rental_date)->diffInDays(now())
+                                'days_since_last_rental' => Carbon::parse($item->last_rental_date)->diffInDays(now()),
                             ];
                         } catch (Exception $e) {
                             Log::warning('Failed to format top customer', [
                                 'customer_id' => $item->customer_id,
-                                'error' => $e->getMessage()
+                                'error' => $e->getMessage(),
                             ]);
 
                             return [
                                 'customer_id' => $item->customer_id,
-                                'error' => 'Failed to load customer details'
+                                'error' => 'Failed to load customer details',
                             ];
                         }
                     });
@@ -719,18 +721,18 @@ class ReportController extends Controller
                         ->sum('total_price'),
                     'average_customer_value' => $topCustomers->count() > 0
                         ? round($topCustomers->avg('total_spent'), 2)
-                        : 0
+                        : 0,
                 ];
             } catch (QueryException $e) {
                 Log::error('Database error generating top customers report', [
                     'user_id' => $userId,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate top customers report',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
 
@@ -740,21 +742,21 @@ class ReportController extends Controller
                     'top_customers' => $topCustomers,
                     'summary' => $summary,
                     'filters' => [
-                        'limit' => $limit
-                    ]
-                ]
+                        'limit' => $limit,
+                    ],
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Unexpected error generating top customers report', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate top customers report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -770,14 +772,14 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 Log::warning('Unauthenticated access to document statistics', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -844,7 +846,7 @@ class ReportController extends Controller
                             'without_documents' => $totalRentals - $rentalsWithBothDocuments,
                             'agreement_rate' => $agreementRate,
                             'receipt_rate' => $receiptRate,
-                            'both_documents_rate' => $bothDocumentsRate
+                            'both_documents_rate' => $bothDocumentsRate,
                         ],
                         'customers' => [
                             'total' => $totalCustomers,
@@ -854,33 +856,33 @@ class ReportController extends Controller
                             'license_adoption_rate' => $licenseAdoptionRate,
                             'both_documents_rate' => $totalCustomers > 0
                                 ? round((min($customersWithAadhaar, $customersWithLicense) / $totalCustomers) * 100, 2)
-                                : 0
-                        ]
-                    ]
+                                : 0,
+                        ],
+                    ],
                 ], 200);
             } catch (QueryException $e) {
                 Log::error('Database error generating document statistics', [
                     'user_id' => $userId,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate document statistics',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred',
                 ], 500);
             }
         } catch (Exception $e) {
             Log::error('Unexpected error generating document statistics', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate document statistics',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -893,22 +895,22 @@ class ReportController extends Controller
         try {
             $userId = auth()->id();
 
-            if (!$userId) {
+            if (! $userId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
             $validTypes = ['rentals', 'earnings', 'vehicles', 'customers'];
 
-            if (!in_array($type, $validTypes)) {
+            if (! in_array($type, $validTypes)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid export type',
                     'errors' => [
-                        'type' => ['Type must be one of: ' . implode(', ', $validTypes)]
-                    ]
+                        'type' => ['Type must be one of: '.implode(', ', $validTypes)],
+                    ],
                 ], 400);
             }
 
@@ -924,21 +926,21 @@ class ReportController extends Controller
                     // Add status filtering if provided
                     if ($request->has('status') && in_array($request->status, ['active', 'completed', 'cancelled'])) {
                         $query->where('status', $request->status);
-                        $filename .= $request->status . "_";
+                        $filename .= $request->status.'_';
                     }
 
                     // Add date filtering if provided
                     if ($request->has('start_date') && $request->has('end_date')) {
                         $validated = $request->validate([
                             'start_date' => 'required|date',
-                            'end_date' => 'required|date|after_or_equal:start_date'
+                            'end_date' => 'required|date|after_or_equal:start_date',
                         ]);
 
                         $startDate = Carbon::parse($validated['start_date'])->startOfDay();
                         $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
                         $query->whereBetween('created_at', [$startDate, $endDate]);
-                        $filename .= $validated['start_date'] . "_to_" . $validated['end_date'];
+                        $filename .= $validated['start_date'].'_to_'.$validated['end_date'];
                     } else {
                         $filename .= date('Y-m-d');
                     }
@@ -967,7 +969,7 @@ class ReportController extends Controller
                             ucfirst($rental->status),
                             number_format((float) ($rental->total_price ?? 0), 2),
                             $rental->payment_method ?? 'N/A',
-                            $rental->created_at ? Carbon::parse($rental->created_at)->format('Y-m-d H:i:s') : 'N/A'
+                            $rental->created_at ? Carbon::parse($rental->created_at)->format('Y-m-d H:i:s') : 'N/A',
                         ];
                     });
                     break;
@@ -980,14 +982,14 @@ class ReportController extends Controller
                     if ($request->has('start_date') && $request->has('end_date')) {
                         $validated = $request->validate([
                             'start_date' => 'required|date',
-                            'end_date' => 'required|date|after_or_equal:start_date'
+                            'end_date' => 'required|date|after_or_equal:start_date',
                         ]);
 
                         $startDate = Carbon::parse($validated['start_date'])->startOfDay();
                         $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
                         $query->whereBetween('end_time', [$startDate, $endDate]);
-                        $filename .= $validated['start_date'] . "_to_" . $validated['end_date'];
+                        $filename .= $validated['start_date'].'_to_'.$validated['end_date'];
                     } else {
                         $filename .= date('Y-m-d');
                     }
@@ -1006,7 +1008,7 @@ class ReportController extends Controller
                         return [
                             Carbon::parse($item->date)->format('Y-m-d'),
                             (int) $item->count,
-                            number_format((float) $item->total, 2)
+                            number_format((float) $item->total, 2),
                         ];
                     });
                     break;
@@ -1029,7 +1031,7 @@ class ReportController extends Controller
                             number_format((float) ($vehicle->daily_rate ?? 0), 2),
                             $totalRentals,
                             number_format($totalRevenue, 2),
-                            $vehicle->created_at ? Carbon::parse($vehicle->created_at)->format('Y-m-d H:i:s') : 'N/A'
+                            $vehicle->created_at ? Carbon::parse($vehicle->created_at)->format('Y-m-d H:i:s') : 'N/A',
                         ];
                     });
 
@@ -1065,7 +1067,7 @@ class ReportController extends Controller
                             number_format($totalSpent, 2),
                             $lastRental ? Carbon::parse($lastRental->created_at)->format('Y-m-d') : 'N/A',
                             $firstRental ? Carbon::parse($firstRental->created_at)->format('Y-m-d') : 'N/A',
-                            $customer->created_at ? Carbon::parse($customer->created_at)->format('Y-m-d') : 'N/A'
+                            $customer->created_at ? Carbon::parse($customer->created_at)->format('Y-m-d') : 'N/A',
                         ];
                     });
 
@@ -1074,7 +1076,7 @@ class ReportController extends Controller
             }
 
             // Generate CSV with UTF-8 BOM for Excel compatibility
-            $csvContent = "\xEF\xBB\xBF" . implode(',', $headers) . "\n";
+            $csvContent = "\xEF\xBB\xBF".implode(',', $headers)."\n";
 
             foreach ($data as $row) {
                 $escapedRow = array_map(function ($field) {
@@ -1089,16 +1091,18 @@ class ReportController extends Controller
                     // Escape fields that contain commas, quotes, newlines, or carriage returns
                     if (preg_match('/[,"\n\r]/', $field)) {
                         $field = str_replace('"', '""', $field);
-                        return '"' . $field . '"';
+
+                        return '"'.$field.'"';
                     }
+
                     return $field;
                 }, $row);
 
-                $csvContent .= implode(',', $escapedRow) . "\n";
+                $csvContent .= implode(',', $escapedRow)."\n";
             }
 
             // Add .csv extension if not present
-            if (!str_ends_with($filename, '.csv')) {
+            if (! str_ends_with($filename, '.csv')) {
                 $filename .= '.csv';
             }
 
@@ -1110,25 +1114,25 @@ class ReportController extends Controller
         } catch (ValidationException $e) {
             Log::warning('Export validation failed', [
                 'type' => $type,
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Failed to export report', [
                 'type' => $type,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to export report',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -1145,7 +1149,7 @@ class ReportController extends Controller
             if ($request->has('start_date') && $request->has('end_date')) {
                 $query->whereBetween('created_at', [
                     Carbon::parse($request->start_date)->startOfDay(),
-                    Carbon::parse($request->end_date)->endOfDay()
+                    Carbon::parse($request->end_date)->endOfDay(),
                 ]);
             }
 
@@ -1159,18 +1163,18 @@ class ReportController extends Controller
             return [
                 'active' => $breakdown->get('active', 0),
                 'completed' => $breakdown->get('completed', 0),
-                'cancelled' => $breakdown->get('cancelled', 0)
+                'cancelled' => $breakdown->get('cancelled', 0),
             ];
         } catch (Exception $e) {
             Log::error('Failed to get status breakdown', [
                 'user_id' => $userId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return [
                 'active' => 0,
                 'completed' => 0,
-                'cancelled' => 0
+                'cancelled' => 0,
             ];
         }
     }
@@ -1181,7 +1185,7 @@ class ReportController extends Controller
     protected function calculateUtilizationRate($vehicle, $rentalCount)
     {
         try {
-            if (!$vehicle || $rentalCount == 0) {
+            if (! $vehicle || $rentalCount == 0) {
                 return 0;
             }
 
@@ -1191,12 +1195,14 @@ class ReportController extends Controller
             $maxPossibleRentals = $daysInMonth * $maxRentalsPerDay;
 
             $utilization = ($rentalCount / $maxPossibleRentals) * 100;
+
             return round(min($utilization, 100), 2);
         } catch (Exception $e) {
             Log::error('Failed to calculate utilization rate', [
                 'vehicle_id' => $vehicle->id ?? null,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return 0;
         }
     }
@@ -1216,5 +1222,199 @@ class ReportController extends Controller
             default:
                 return 'All Time';
         }
+    }
+
+    /**
+     * Get verification metrics (admin only)
+     */
+    public function verificationMetrics(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+
+            if (! $userId) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $metrics = [
+                'total_verifications' => Rental::where('user_id', $userId)->whereNotNull('verification_completed_at')->count(),
+                'cached_verifications' => Rental::where('user_id', $userId)->where('is_verification_cached', true)->count(),
+                'fresh_verifications' => Rental::where('user_id', $userId)->where('is_verification_cached', false)->count(),
+                'total_fees_collected' => (float) Rental::where('user_id', $userId)->sum('verification_fee_deducted'),
+                'average_verification_time' => $this->getAverageVerificationTimeForUser($userId),
+                'verifications_by_day' => $this->getVerificationsByDay($userId),
+            ];
+
+            return response()->json(['success' => true, 'data' => $metrics], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to fetch verification metrics'], 500);
+        }
+    }
+
+    /**
+     * Get fraud detection report (admin only)
+     */
+    public function fraudDetectionReport(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+
+            if (! $userId) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $report = [
+                'suspicious_rentals' => Rental::where('user_id', $userId)
+                    ->where(function ($q) {
+                        $q->where('damage_amount', '>', 5000)
+                            ->orWhere('status', 'cancelled');
+                    })
+                    ->with(['vehicle', 'customer'])
+                    ->get()
+                    ->map(function ($rental) {
+                        return [
+                            'id' => $rental->id,
+                            'type' => $rental->damage_amount > 5000 ? 'high_damage' : 'cancelled',
+                            'amount' => $rental->damage_amount,
+                            'created_at' => $rental->created_at,
+                        ];
+                    }),
+                'unverified_customers' => Customer::whereDoesntHave('rentals', function ($q) use ($userId) {
+                    $q->where('user_id', $userId);
+                })->count(),
+                'fraud_score' => $this->calculateFraudScore($userId),
+            ];
+
+            return response()->json(['success' => true, 'data' => $report], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to fetch fraud report'], 500);
+        }
+    }
+
+    /**
+     * Get customer analytics (admin only)
+     */
+    public function customerAnalytics(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+
+            if (! $userId) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $analytics = [
+                'total_customers' => Customer::count(),
+                'new_customers_today' => Customer::whereDate('created_at', today())->count(),
+                'new_customers_this_week' => Customer::whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])->count(),
+                'customers_with_rentals' => Customer::has('rentals')->count(),
+                'average_rentals_per_customer' => $this->getAverageRentalsPerCustomer(),
+                'top_customers_by_rentals' => $this->getTopCustomersByRentals(10),
+                'customer_retention_rate' => $this->getRetentionRate(),
+            ];
+
+            return response()->json(['success' => true, 'data' => $analytics], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to fetch customer analytics'], 500);
+        }
+    }
+
+    /**
+     * Get access logs (admin only)
+     */
+    public function accessLogs(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+
+            if (! $userId) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+
+            $logs = CustomerAccessLog::with(['user', 'customer'])
+                ->orderBy('created_at', 'desc')
+                ->paginate($request->get('per_page', 50));
+
+            return response()->json(['success' => true, 'data' => $logs], 200);
+
+        } catch (Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to fetch access logs'], 500);
+        }
+    }
+
+    // Helper methods for ReportController
+
+    private function getAverageVerificationTimeForUser($userId): ?float
+    {
+        $verifications = Rental::where('user_id', $userId)
+            ->whereNotNull('verification_completed_at')
+            ->get();
+
+        if ($verifications->isEmpty()) {
+            return null;
+        }
+
+        $totalMinutes = $verifications->sum(function ($rental) {
+            return $rental->created_at->diffInMinutes($rental->verification_completed_at);
+        });
+
+        return round($totalMinutes / $verifications->count(), 2);
+    }
+
+    private function getVerificationsByDay($userId, $days = 30)
+    {
+        return Rental::where('user_id', $userId)
+            ->where('created_at', '>=', now()->subDays($days))
+            ->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as count'))
+            ->groupBy('date')
+            ->orderBy('date', 'desc')
+            ->get();
+    }
+
+    private function calculateFraudScore($userId): float
+    {
+        $totalRentals = Rental::where('user_id', $userId)->count();
+        $suspiciousRentals = Rental::where('user_id', $userId)
+            ->where(function ($q) {
+                $q->where('damage_amount', '>', 5000)
+                    ->orWhere('status', 'cancelled');
+            })->count();
+
+        if ($totalRentals === 0) {
+            return 0;
+        }
+
+        return min(100, round(($suspiciousRentals / $totalRentals) * 100, 2));
+    }
+
+    private function getAverageRentalsPerCustomer(): float
+    {
+        $totalCustomers = Customer::count();
+        $totalRentals = Rental::count();
+
+        if ($totalCustomers === 0) {
+            return 0;
+        }
+
+        return round($totalRentals / $totalCustomers, 2);
+    }
+
+    private function getTopCustomersByRentals($limit = 10)
+    {
+        return Customer::withCount('rentals')
+            ->orderBy('rentals_count', 'desc')
+            ->limit($limit)
+            ->get()
+            ->map(function ($customer) {
+                return [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'phone' => $customer->phone,
+                    'rental_count' => $customer->rentals_count,
+                ];
+            });
     }
 }

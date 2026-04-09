@@ -351,7 +351,7 @@ class EmailVerificationController extends Controller
      */
     private function sendVerificationEmailContent($email, $name, $otp, $token)
     {
-        $verificationLink = url("/api/email/verify/token/{$token}");
+        $verificationLink = route('verification.verify', ['token' => $token]);
         
         $subject = 'Verify Your Email - Vehicle Rental System';
         $htmlContent = "

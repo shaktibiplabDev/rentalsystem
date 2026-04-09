@@ -39,7 +39,8 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            // Backward compatible with legacy MAIL_ENCRYPTION key.
+            'scheme' => env('MAIL_SCHEME', env('MAIL_ENCRYPTION')),
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),

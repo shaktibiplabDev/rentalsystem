@@ -5,26 +5,42 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Models\Notification;
 use App\Services\CashfreeService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
 use Exception;
 use Carbon\Carbon;
 
 class WalletController extends Controller
 {
     protected $cashfreeService;
-
+    
+    // Security Constants
+    protected $maxWalletBalance = 1000000; // 10 Lakhs INR
+    protected $minAddAmount = 1;
+    protected $maxAddAmount = 100000;
+    protected $minDeductAmount = 1;
+    protected $maxDeductAmount = 100000;
+    protected $minTransferAmount = 1;
+    protected $maxTransferAmount = 50000;
+    protected $maxDailyTransfer = 100000; // Maximum transfer per day
+    protected $maxDailyTransactions = 20; // Maximum transactions per day
+    protected $transferCooldownMinutes = 1; // Cooldown between transfers
+    protected $cacheDuration = 300; // 5 minutes for cached balance
+    
     public function __construct(CashfreeService $cashfreeService)
     {
         $this->cashfreeService = $cashfreeService;
     }
 
     /**
-     * Get current wallet balance
+     * Get current wallet balance with caching
      */
     public function balance()
     {
@@ -42,38 +58,45 @@ class WalletController extends Controller
                 ], 401);
             }
 
+            // Get from cache to reduce database load
+            $cacheKey = 'wallet_balance_' . $user->id;
+            $balance = Cache::remember($cacheKey, now()->addMinutes($this->cacheDuration), function () use ($user) {
+                return (float) $user->wallet_balance;
+            });
+
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'balance' => (float) $user->wallet_balance,
+                    'balance' => $balance,
                     'currency' => 'INR',
-                    'formatted_balance' => '₹' . number_format($user->wallet_balance, 2)
+                    'formatted_balance' => '₹' . number_format($balance, 2),
+                    'max_balance_limit' => $this->maxWalletBalance,
+                    'formatted_max_limit' => '₹' . number_format($this->maxWalletBalance, 2)
                 ]
             ], 200);
 
         } catch (QueryException $e) {
             Log::error('Database error fetching wallet balance', [
                 'user_id' => auth()->id(),
-                'error' => $e->getMessage()
+                'error_code' => $e->getCode()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch wallet balance',
-                'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                'error' => 'Database error occurred'
             ], 500);
             
         } catch (Exception $e) {
             Log::error('Unexpected error fetching wallet balance', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch wallet balance',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
@@ -97,66 +120,41 @@ class WalletController extends Controller
                 ], 401);
             }
 
+            $validated = $request->validate([
+                'type' => 'nullable|in:credit,debit',
+                'status' => 'nullable|in:pending,completed,failed',
+                'start_date' => 'nullable|date|before_or_equal:end_date',
+                'end_date' => 'nullable|date|after_or_equal:start_date',
+                'per_page' => 'nullable|integer|min:1|max:100',
+                'page' => 'nullable|integer|min:1'
+            ]);
+
             try {
                 $query = $user->walletTransactions();
                 
                 // Filter by type
-                if ($request->has('type') && in_array($request->type, ['credit', 'debit'])) {
-                    $query->where('type', $request->type);
+                if (!empty($validated['type'])) {
+                    $query->where('type', $validated['type']);
                 }
                 
                 // Filter by status
-                if ($request->has('status') && in_array($request->status, ['pending', 'completed', 'failed'])) {
-                    $query->where('status', $request->status);
+                if (!empty($validated['status'])) {
+                    $query->where('status', $validated['status']);
                 }
                 
                 // Filter by date range
-                if ($request->has('start_date') && $request->has('end_date')) {
-                    $request->validate([
-                        'start_date' => 'required|date',
-                        'end_date' => 'required|date|after_or_equal:start_date'
-                    ]);
-                    
-                    $startDate = Carbon::parse($request->start_date)->startOfDay();
-                    $endDate = Carbon::parse($request->end_date)->endOfDay();
+                if (!empty($validated['start_date']) && !empty($validated['end_date'])) {
+                    $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+                    $endDate = Carbon::parse($validated['end_date'])->endOfDay();
                     $query->whereBetween('created_at', [$startDate, $endDate]);
                 }
                 
-                // Pagination
-                $perPage = $request->get('per_page', 20);
-                $perPage = min(max($perPage, 1), 100);
+                $perPage = $validated['per_page'] ?? 20;
                 
                 $transactions = $query->orderBy('created_at', 'desc')
                     ->paginate($perPage)
                     ->through(function ($transaction) {
-                        try {
-                            return [
-                                'id' => $transaction->id,
-                                'amount' => (float) $transaction->amount,
-                                'formatted_amount' => '₹' . number_format($transaction->amount, 2),
-                                'type' => $transaction->type,
-                                'reason' => $transaction->reason,
-                                'status' => $transaction->status ?? 'completed',
-                                'reference_id' => $transaction->reference_id,
-                                'created_at' => $transaction->created_at,
-                                'created_at_human' => $transaction->created_at->diffForHumans(),
-                                'created_at_formatted' => $transaction->created_at->format('d M Y, h:i A')
-                            ];
-                        } catch (Exception $e) {
-                            Log::warning('Failed to format transaction', [
-                                'transaction_id' => $transaction->id,
-                                'error' => $e->getMessage()
-                            ]);
-                            
-                            return [
-                                'id' => $transaction->id,
-                                'amount' => (float) $transaction->amount,
-                                'type' => $transaction->type,
-                                'reason' => $transaction->reason,
-                                'created_at' => $transaction->created_at,
-                                'error' => 'Failed to load full details'
-                            ];
-                        }
+                        return $this->formatTransaction($transaction);
                     });
                 
                 $totalCredits = (float) $user->walletTransactions()
@@ -169,15 +167,21 @@ class WalletController extends Controller
                     ->where('status', 'completed')
                     ->sum('amount');
                     
-                // Get transaction statistics
+                $pendingTransactions = $user->walletTransactions()
+                    ->where('status', 'pending')
+                    ->count();
+                    
+                $failedTransactions = $user->walletTransactions()
+                    ->where('status', 'failed')
+                    ->count();
+                
                 $stats = [
                     'total_credits' => $totalCredits,
                     'total_debits' => $totalDebits,
                     'current_balance' => (float) $user->wallet_balance,
                     'transaction_count' => $transactions->total(),
-                    'pending_transactions' => $user->walletTransactions()
-                        ->where('status', 'pending')
-                        ->count(),
+                    'pending_transactions' => $pendingTransactions,
+                    'failed_transactions' => $failedTransactions,
                     'average_credit' => $transactions->where('type', 'credit')->count() > 0 
                         ? round($totalCredits / $transactions->where('type', 'credit')->count(), 2) 
                         : 0,
@@ -186,34 +190,34 @@ class WalletController extends Controller
                         : 0
                 ];
                 
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'transactions' => $transactions->items(),
+                        'summary' => $stats,
+                        'pagination' => [
+                            'current_page' => $transactions->currentPage(),
+                            'last_page' => $transactions->lastPage(),
+                            'per_page' => $transactions->perPage(),
+                            'total' => $transactions->total(),
+                            'from' => $transactions->firstItem(),
+                            'to' => $transactions->lastItem()
+                        ]
+                    ]
+                ], 200);
+
             } catch (QueryException $e) {
                 Log::error('Database error fetching wallet transactions', [
                     'user_id' => $user->id,
-                    'error' => $e->getMessage()
+                    'error_code' => $e->getCode()
                 ]);
                 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to fetch wallet transactions',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => 'Database error occurred'
                 ], 500);
             }
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'transactions' => $transactions->items(),
-                    'summary' => $stats,
-                    'pagination' => [
-                        'current_page' => $transactions->currentPage(),
-                        'last_page' => $transactions->lastPage(),
-                        'per_page' => $transactions->perPage(),
-                        'total' => $transactions->total(),
-                        'from' => $transactions->firstItem(),
-                        'to' => $transactions->lastItem()
-                    ]
-                ]
-            ], 200);
 
         } catch (ValidationException $e) {
             return response()->json([
@@ -224,20 +228,19 @@ class WalletController extends Controller
         } catch (Exception $e) {
             Log::error('Unexpected error fetching wallet transactions', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch wallet transactions',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
 
     /**
-     * Add money to wallet (Direct method without payment gateway)
+     * Add money to wallet with atomic operation and rate limiting
      */
     public function addMoney(Request $request)
     {
@@ -256,30 +259,36 @@ class WalletController extends Controller
             }
 
             $validated = $request->validate([
-                'amount' => 'required|numeric|min:1|max:100000',
-                'reason' => 'sometimes|string|max:255',
-                'payment_method' => 'sometimes|string|in:credit_card,debit_card,upi,net_banking'
+                'amount' => 'required|numeric|min:' . $this->minAddAmount . '|max:' . $this->maxAddAmount,
+                'reason' => 'nullable|string|max:255',
+                'payment_method' => 'nullable|string|in:credit_card,debit_card,upi,net_banking,cash'
             ]);
 
             $amount = (float) $validated['amount'];
-            $reason = $validated['reason'] ?? 'Wallet recharge';
-            $paymentMethod = $validated['payment_method'] ?? 'other';
-
-            // Check for maximum wallet balance limit
-            $maxBalance = 1000000; // 10 Lakhs
-            if ($user->wallet_balance + $amount > $maxBalance) {
-                Log::warning('Wallet balance limit would be exceeded', [
-                    'user_id' => $user->id,
-                    'current_balance' => $user->wallet_balance,
-                    'requested_amount' => $amount,
-                    'max_limit' => $maxBalance
-                ]);
-                
+            $reason = $this->sanitizeInput($validated['reason'] ?? 'Wallet recharge');
+            $paymentMethod = $validated['payment_method'] ?? 'cash';
+            
+            // Rate limiting for add money requests
+            $rateLimitKey = 'add_money_' . $user->id;
+            $recentRequests = (int) Cache::get($rateLimitKey, 0);
+            
+            if ($recentRequests >= 10) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Amount exceeds maximum wallet limit',
+                    'message' => 'Too many add money requests. Please try again later.',
+                    'errors' => ['amount' => ['Please wait before making another request']]
+                ], 429);
+            }
+            
+            // Check daily limit
+            $dailyTotal = $this->getDailyTotal($user->id, 'credit');
+            if ($dailyTotal + $amount > $this->maxDailyTransfer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Daily add money limit exceeded',
                     'errors' => [
-                        'amount' => ['Adding this amount would exceed the maximum wallet balance limit of ₹' . number_format($maxBalance, 2)]
+                        'amount' => ['Daily limit is ₹' . number_format($this->maxDailyTransfer, 2) . 
+                                    '. Current daily total: ₹' . number_format($dailyTotal, 2)]
                     ]
                 ], 422);
             }
@@ -287,23 +296,35 @@ class WalletController extends Controller
             DB::beginTransaction();
             
             try {
-                // Update wallet balance with locking to prevent race conditions
-                $user = User::where('id', $user->id)->lockForUpdate()->first();
+                // Atomic update with balance check
+                $updated = User::where('id', $user->id)
+                    ->where(DB::raw('wallet_balance + ' . $amount), '<=', $this->maxWalletBalance)
+                    ->update(['wallet_balance' => DB::raw('wallet_balance + ' . $amount)]);
                 
-                if ($user->wallet_balance + $amount > $maxBalance) {
+                if (!$updated) {
                     DB::rollBack();
+                    
+                    $currentBalance = User::where('id', $user->id)->value('wallet_balance');
+                    
+                    if ($currentBalance + $amount > $this->maxWalletBalance) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Amount would exceed maximum wallet limit',
+                            'errors' => [
+                                'amount' => ['Adding this amount would exceed the maximum wallet balance limit of ₹' . number_format($this->maxWalletBalance, 2)]
+                            ]
+                        ], 422);
+                    }
+                    
                     return response()->json([
                         'success' => false,
-                        'message' => 'Amount exceeds maximum wallet limit',
-                        'errors' => [
-                            'amount' => ['Adding this amount would exceed the maximum wallet balance limit.']
-                        ]
-                    ], 422);
+                        'message' => 'Failed to add money due to concurrent operation. Please try again.',
+                    ], 409);
                 }
                 
-                $user->wallet_balance += $amount;
-                $user->save();
-
+                // Get updated user
+                $user->refresh();
+                
                 $transaction = WalletTransaction::create([
                     'user_id' => $user->id,
                     'amount' => $amount,
@@ -316,41 +337,45 @@ class WalletController extends Controller
                 
                 DB::commit();
                 
+                // Clear cache
+                Cache::forget('wallet_balance_' . $user->id);
+                Cache::put($rateLimitKey, $recentRequests + 1, now()->addMinutes(1));
+                
+                // Send notification
+                $this->sendNotification($user->id, [
+                    'title' => 'Money Added to Wallet',
+                    'message' => '₹' . number_format($amount, 2) . ' has been added to your wallet.',
+                    'type' => 'wallet_credit',
+                    'data' => ['amount' => $amount, 'transaction_id' => $transaction->id]
+                ]);
+                
+                Log::info('Money added to wallet', [
+                    'user_id' => $user->id,
+                    'amount' => $amount,
+                    'new_balance' => $user->wallet_balance,
+                    'payment_method' => $paymentMethod,
+                    'transaction_id' => $transaction->id,
+                    'ip' => $request->ip()
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Money added successfully',
+                    'data' => [
+                        'transaction' => $this->formatTransaction($transaction),
+                        'new_balance' => (float) $user->wallet_balance,
+                        'formatted_balance' => '₹' . number_format($user->wallet_balance, 2)
+                    ]
+                ], 200);
+
             } catch (QueryException $e) {
                 DB::rollBack();
                 throw $e;
             }
 
-            Log::info('Money added to wallet', [
-                'user_id' => $user->id,
-                'amount' => $amount,
-                'new_balance' => $user->wallet_balance,
-                'payment_method' => $paymentMethod,
-                'transaction_id' => $transaction->id,
-                'ip' => $request->ip()
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Money added successfully',
-                'data' => [
-                    'transaction' => [
-                        'id' => $transaction->id,
-                        'amount' => (float) $transaction->amount,
-                        'formatted_amount' => '₹' . number_format($transaction->amount, 2),
-                        'type' => $transaction->type,
-                        'reason' => $transaction->reason,
-                        'reference_id' => $transaction->reference_id,
-                        'created_at' => $transaction->created_at
-                    ],
-                    'new_balance' => (float) $user->wallet_balance,
-                    'formatted_balance' => '₹' . number_format($user->wallet_balance, 2)
-                ]
-            ], 200);
-
         } catch (ValidationException $e) {
             Log::warning('Add money validation failed', [
-                'errors' => $e->errors(),
+                'errors' => array_keys($e->errors()),
                 'user_id' => auth()->id()
             ]);
             
@@ -364,32 +389,31 @@ class WalletController extends Controller
             Log::error('Database error adding money', [
                 'user_id' => auth()->id(),
                 'amount' => $validated['amount'] ?? null,
-                'error' => $e->getMessage()
+                'error_code' => $e->getCode()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add money',
-                'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                'error' => 'Database error occurred'
             ], 500);
             
         } catch (Exception $e) {
             Log::error('Unexpected error adding money', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to add money',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
 
     /**
-     * Deduct money from wallet
+     * Deduct money from wallet with atomic operation
      */
     public function deductMoney(Request $request)
     {
@@ -404,41 +428,37 @@ class WalletController extends Controller
             }
 
             $validated = $request->validate([
-                'amount' => 'required|numeric|min:1|max:100000',
+                'amount' => 'required|numeric|min:' . $this->minDeductAmount . '|max:' . $this->maxDeductAmount,
                 'reason' => 'required|string|max:255',
-                'reference_id' => 'sometimes|string|max:100'
+                'reference_id' => 'nullable|string|max:100'
             ]);
 
             $amount = (float) $validated['amount'];
-            $reason = $validated['reason'];
+            $reason = $this->sanitizeInput($validated['reason']);
 
             DB::beginTransaction();
             
             try {
-                // Lock user record for update
-                $user = User::where('id', $user->id)->lockForUpdate()->first();
+                // Atomic update with balance check
+                $updated = User::where('id', $user->id)
+                    ->where('wallet_balance', '>=', $amount)
+                    ->update(['wallet_balance' => DB::raw('wallet_balance - ' . $amount)]);
                 
-                if ($user->wallet_balance < $amount) {
+                if (!$updated) {
                     DB::rollBack();
                     
-                    Log::warning('Insufficient balance for deduction', [
-                        'user_id' => $user->id,
-                        'current_balance' => $user->wallet_balance,
-                        'requested_amount' => $amount,
-                        'reason' => $reason
-                    ]);
+                    $currentBalance = User::where('id', $user->id)->value('wallet_balance');
                     
                     return response()->json([
                         'success' => false,
                         'message' => 'Insufficient balance',
                         'errors' => [
-                            'amount' => ['Insufficient wallet balance. Current balance: ₹' . number_format($user->wallet_balance, 2)]
+                            'amount' => ['Insufficient wallet balance. Current balance: ₹' . number_format($currentBalance, 2)]
                         ]
                     ], 422);
                 }
-
-                $user->wallet_balance -= $amount;
-                $user->save();
+                
+                $user->refresh();
 
                 $transaction = WalletTransaction::create([
                     'user_id' => $user->id,
@@ -451,37 +471,31 @@ class WalletController extends Controller
                 
                 DB::commit();
                 
+                // Clear cache
+                Cache::forget('wallet_balance_' . $user->id);
+                
+                Log::info('Money deducted from wallet', [
+                    'user_id' => $user->id,
+                    'amount' => $amount,
+                    'reason' => $reason,
+                    'transaction_id' => $transaction->id,
+                    'ip' => $request->ip()
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Money deducted successfully',
+                    'data' => [
+                        'transaction' => $this->formatTransaction($transaction),
+                        'new_balance' => (float) $user->wallet_balance,
+                        'formatted_balance' => '₹' . number_format($user->wallet_balance, 2)
+                    ]
+                ], 200);
+
             } catch (QueryException $e) {
                 DB::rollBack();
                 throw $e;
             }
-
-            Log::info('Money deducted from wallet', [
-                'user_id' => $user->id,
-                'amount' => $amount,
-                'new_balance' => $user->wallet_balance,
-                'reason' => $reason,
-                'transaction_id' => $transaction->id,
-                'ip' => $request->ip()
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Money deducted successfully',
-                'data' => [
-                    'transaction' => [
-                        'id' => $transaction->id,
-                        'amount' => (float) $transaction->amount,
-                        'formatted_amount' => '₹' . number_format($transaction->amount, 2),
-                        'type' => $transaction->type,
-                        'reason' => $transaction->reason,
-                        'reference_id' => $transaction->reference_id,
-                        'created_at' => $transaction->created_at
-                    ],
-                    'new_balance' => (float) $user->wallet_balance,
-                    'formatted_balance' => '₹' . number_format($user->wallet_balance, 2)
-                ]
-            ], 200);
 
         } catch (ValidationException $e) {
             return response()->json([
@@ -494,32 +508,31 @@ class WalletController extends Controller
             Log::error('Database error deducting money', [
                 'user_id' => auth()->id(),
                 'amount' => $validated['amount'] ?? null,
-                'error' => $e->getMessage()
+                'error_code' => $e->getCode()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to deduct money',
-                'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                'error' => 'Database error occurred'
             ], 500);
             
         } catch (Exception $e) {
             Log::error('Unexpected error deducting money', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to deduct money',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
 
     /**
-     * Transfer money to another user
+     * Transfer money to another user with comprehensive security checks
      */
     public function transfer(Request $request)
     {
@@ -538,9 +551,9 @@ class WalletController extends Controller
             }
 
             $validated = $request->validate([
-                'recipient_phone' => 'required|string|max:20|exists:users,phone',
-                'amount' => 'required|numeric|min:1|max:100000',
-                'reason' => 'sometimes|string|max:255',
+                'recipient_phone' => 'required|string|max:20|regex:/^[0-9]{10,15}$/',
+                'amount' => 'required|numeric|min:' . $this->minTransferAmount . '|max:' . $this->maxTransferAmount,
+                'reason' => 'nullable|string|max:255',
                 'notes' => 'nullable|string|max:500'
             ]);
 
@@ -556,8 +569,47 @@ class WalletController extends Controller
             }
 
             $amount = (float) $validated['amount'];
-            $reason = $validated['reason'] ?? 'Wallet transfer';
-            $notes = $validated['notes'] ?? null;
+            $reason = $this->sanitizeInput($validated['reason'] ?? 'Wallet transfer');
+            $notes = $this->sanitizeInput($validated['notes'] ?? null);
+            
+            // Rate limiting for transfers
+            $rateLimitKey = 'transfer_' . $user->id;
+            $lastTransfer = Cache::get($rateLimitKey);
+            
+            if ($lastTransfer && $lastTransfer > now()->subMinutes($this->transferCooldownMinutes)->timestamp) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please wait before making another transfer',
+                    'errors' => [
+                        'amount' => ['Please wait ' . $this->transferCooldownMinutes . ' minute(s) between transfers']
+                    ]
+                ], 429);
+            }
+            
+            // Check daily transfer limit
+            $dailyTotal = $this->getDailyTotal($user->id, 'debit');
+            if ($dailyTotal + $amount > $this->maxDailyTransfer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Daily transfer limit exceeded',
+                    'errors' => [
+                        'amount' => ['Daily transfer limit is ₹' . number_format($this->maxDailyTransfer, 2) . 
+                                    '. Current daily total: ₹' . number_format($dailyTotal, 2)]
+                    ]
+                ], 422);
+            }
+            
+            // Check daily transaction count
+            $dailyCount = $this->getDailyTransactionCount($user->id);
+            if ($dailyCount >= $this->maxDailyTransactions) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Daily transaction limit exceeded',
+                    'errors' => [
+                        'amount' => ['Maximum ' . $this->maxDailyTransactions . ' transactions per day allowed']
+                    ]
+                ], 422);
+            }
 
             DB::beginTransaction();
             
@@ -598,8 +650,7 @@ class WalletController extends Controller
                 }
                 
                 // Check recipient balance limit
-                $maxBalance = 1000000;
-                if ($recipient->wallet_balance + $amount > $maxBalance) {
+                if ($recipient->wallet_balance + $amount > $this->maxWalletBalance) {
                     DB::rollBack();
                     
                     return response()->json([
@@ -613,9 +664,27 @@ class WalletController extends Controller
                 
                 $referenceId = $this->generateReferenceId();
                 
-                // Deduct from sender
-                $sender->wallet_balance -= $amount;
-                $sender->save();
+                // Atomic deduction from sender
+                $senderUpdated = User::where('id', $sender->id)
+                    ->where('wallet_balance', '>=', $amount)
+                    ->update(['wallet_balance' => DB::raw('wallet_balance - ' . $amount)]);
+                
+                if (!$senderUpdated) {
+                    DB::rollBack();
+                    throw new \Exception('Failed to deduct from sender');
+                }
+                
+                // Atomic addition to recipient
+                $recipientUpdated = User::where('id', $recipient->id)
+                    ->update(['wallet_balance' => DB::raw('wallet_balance + ' . $amount)]);
+                
+                if (!$recipientUpdated) {
+                    DB::rollBack();
+                    throw new \Exception('Failed to credit recipient');
+                }
+                
+                $sender->refresh();
+                $recipient->refresh();
                 
                 $debitTransaction = WalletTransaction::create([
                     'user_id' => $sender->id,
@@ -626,10 +695,6 @@ class WalletController extends Controller
                     'status' => 'completed',
                     'notes' => $notes
                 ]);
-                
-                // Add to recipient
-                $recipient->wallet_balance += $amount;
-                $recipient->save();
                 
                 $creditTransaction = WalletTransaction::create([
                     'user_id' => $recipient->id,
@@ -643,36 +708,56 @@ class WalletController extends Controller
                 
                 DB::commit();
                 
+                // Clear caches
+                Cache::forget('wallet_balance_' . $sender->id);
+                Cache::forget('wallet_balance_' . $recipient->id);
+                Cache::put($rateLimitKey, now()->timestamp, now()->addMinutes($this->transferCooldownMinutes));
+                
+                // Send notifications
+                $this->sendNotification($sender->id, [
+                    'title' => 'Money Sent',
+                    'message' => '₹' . number_format($amount, 2) . ' has been sent to ' . $recipient->phone,
+                    'type' => 'transfer_debit',
+                    'data' => ['amount' => $amount, 'recipient' => $recipient->phone, 'transaction_id' => $debitTransaction->id]
+                ]);
+                
+                $this->sendNotification($recipient->id, [
+                    'title' => 'Money Received',
+                    'message' => '₹' . number_format($amount, 2) . ' has been received from ' . $sender->phone,
+                    'type' => 'transfer_credit',
+                    'data' => ['amount' => $amount, 'sender' => $sender->phone, 'transaction_id' => $creditTransaction->id]
+                ]);
+
+                Log::info('Money transferred successfully', [
+                    'sender_id' => $sender->id,
+                    'recipient_id' => $recipient->id,
+                    'amount' => $amount,
+                    'reference_id' => $referenceId,
+                    'ip' => $request->ip()
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Money transferred successfully',
+                    'data' => [
+                        'amount' => $amount,
+                        'formatted_amount' => '₹' . number_format($amount, 2),
+                        'recipient_phone' => $recipient->phone,
+                        'recipient_name' => $recipient->name,
+                        'reference_id' => $referenceId,
+                        'new_balance' => (float) $sender->wallet_balance,
+                        'formatted_balance' => '₹' . number_format($sender->wallet_balance, 2)
+                    ]
+                ], 200);
+
             } catch (QueryException $e) {
                 DB::rollBack();
                 throw $e;
             }
 
-            Log::info('Money transferred successfully', [
-                'sender_id' => $sender->id,
-                'recipient_id' => $recipient->id,
-                'amount' => $amount,
-                'reference_id' => $referenceId,
-                'ip' => $request->ip()
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Money transferred successfully',
-                'data' => [
-                    'amount' => $amount,
-                    'formatted_amount' => '₹' . number_format($amount, 2),
-                    'recipient_phone' => $recipient->phone,
-                    'recipient_name' => $recipient->name,
-                    'reference_id' => $referenceId,
-                    'new_balance' => (float) $sender->wallet_balance,
-                    'formatted_balance' => '₹' . number_format($sender->wallet_balance, 2)
-                ]
-            ], 200);
-
         } catch (ValidationException $e) {
             Log::warning('Transfer validation failed', [
-                'errors' => $e->errors(),
+                'errors' => array_keys($e->errors()),
                 'user_id' => auth()->id()
             ]);
             
@@ -685,13 +770,13 @@ class WalletController extends Controller
         } catch (QueryException $e) {
             Log::error('Database error transferring money', [
                 'user_id' => auth()->id(),
-                'error' => $e->getMessage()
+                'error_code' => $e->getCode()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to transfer money',
-                'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                'error' => 'Database error occurred'
             ], 500);
             
         } catch (Exception $e) {
@@ -704,14 +789,13 @@ class WalletController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to transfer money',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
 
     /**
      * Initialize a payment order for wallet recharge via Cashfree
-     * Mobile app calls this to get payment_session_id
      */
     public function initiateRecharge(Request $request)
     {
@@ -726,24 +810,38 @@ class WalletController extends Controller
             }
 
             $validated = $request->validate([
-                'amount' => 'required|numeric|min:1|max:100000',
+                'amount' => 'required|numeric|min:' . $this->minAddAmount . '|max:' . $this->maxAddAmount,
+                'payment_method' => 'nullable|string|in:card,upi,nb'
             ]);
 
             $amount = (float) $validated['amount'];
             
             // Check wallet limit
-            $maxBalance = 1000000;
-            if ($user->wallet_balance + $amount > $maxBalance) {
+            if ($user->wallet_balance + $amount > $this->maxWalletBalance) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Amount exceeds maximum wallet limit of ₹' . number_format($maxBalance, 2)
+                    'message' => 'Amount exceeds maximum wallet limit',
+                    'errors' => [
+                        'amount' => ['Maximum wallet balance is ₹' . number_format($this->maxWalletBalance, 2)]
+                    ]
                 ], 422);
+            }
+            
+            // Rate limiting for recharge initiation
+            $rateLimitKey = 'recharge_initiate_' . $user->id;
+            $recentRequests = (int) Cache::get($rateLimitKey, 0);
+            
+            if ($recentRequests >= 5) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many recharge requests. Please try again later.',
+                ], 429);
             }
 
             // Generate unique order ID
-            $orderId = 'WALLET_' . strtoupper(uniqid()) . '_' . $user->id;
+            $orderId = 'WALLET_' . strtoupper(uniqid()) . '_' . $user->id . '_' . time();
 
-            // Prepare order data for Cashfree - NO return_url needed for mobile app!
+            // Prepare order data for Cashfree
             $orderData = [
                 'order_id' => $orderId,
                 'order_amount' => $amount,
@@ -751,20 +849,30 @@ class WalletController extends Controller
                 'order_note' => 'Wallet recharge for user: ' . $user->phone,
                 'customer_details' => [
                     'customer_id' => 'USER_' . $user->id,
-                    'customer_email' => $user->email,
+                    'customer_email' => $user->email ?? $user->phone . '@temp.com',
                     'customer_phone' => $user->phone,
                     'customer_name' => $user->name
+                ],
+                'order_meta' => [
+                    'return_url' => config('app.frontend_url') . '/wallet?payment_status=completed',
+                    'notify_url' => url('/api/webhooks/cashfree/payment')
                 ]
-                // ⚠️ No return_url - mobile app uses webhook only!
             ];
 
             // Create order via Cashfree
             $order = $this->cashfreeService->createPaymentOrder($orderData);
             
             if (!$order['success']) {
+                Log::error('Cashfree order creation failed', [
+                    'user_id' => $user->id,
+                    'amount' => $amount,
+                    'error' => $order['error'] ?? 'Unknown error'
+                ]);
+                
                 return response()->json([
                     'success' => false,
-                    'message' => $order['error'] ?? 'Failed to create payment order'
+                    'message' => $order['error'] ?? 'Failed to create payment order',
+                    'error' => 'Payment gateway error'
                 ], 500);
             }
 
@@ -777,14 +885,19 @@ class WalletController extends Controller
                 'status' => 'pending',
                 'reference_id' => $orderId,
                 'payment_order_id' => $order['order_id'],
-                'payment_session_id' => $order['payment_session_id'] ?? null
+                'payment_session_id' => $order['payment_session_id'] ?? null,
+                'payment_method' => $validated['payment_method'] ?? null
             ]);
+            
+            // Increment rate limit
+            Cache::put($rateLimitKey, $recentRequests + 1, now()->addMinutes(1));
 
             Log::info('Wallet recharge initiated', [
                 'user_id' => $user->id,
                 'amount' => $amount,
                 'order_id' => $orderId,
-                'payment_session_id' => $order['payment_session_id'] ?? null
+                'payment_session_id' => $order['payment_session_id'] ?? null,
+                'transaction_id' => $pendingTransaction->id
             ]);
 
             return response()->json([
@@ -795,7 +908,8 @@ class WalletController extends Controller
                     'amount' => $amount,
                     'formatted_amount' => '₹' . number_format($amount, 2),
                     'payment_session_id' => $order['payment_session_id'],
-                    'transaction_id' => $pendingTransaction->id
+                    'transaction_id' => $pendingTransaction->id,
+                    'expires_in' => 30 // minutes
                 ]
             ], 200);
 
@@ -815,14 +929,13 @@ class WalletController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to initiate payment',
-                'error' => config('app.debug') ? $e->getMessage() : 'Payment service error'
+                'error' => 'Payment service error'
             ], 500);
         }
     }
 
     /**
      * Check payment status (polling endpoint for mobile app)
-     * Mobile app polls this every few seconds after initiating payment
      */
     public function checkPaymentStatus(Request $request)
     {
@@ -854,6 +967,19 @@ class WalletController extends Controller
                 ], 404);
             }
 
+            // Rate limiting for status checks
+            $rateLimitKey = 'payment_status_' . $user->id . '_' . $transaction->id;
+            $checkCount = (int) Cache::get($rateLimitKey, 0);
+            
+            if ($checkCount > 30) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many status checks. Please wait.',
+                ], 429);
+            }
+            
+            Cache::put($rateLimitKey, $checkCount + 1, now()->addMinutes(1));
+
             // If transaction is still pending, fetch latest status from Cashfree
             if ($transaction->status === 'pending' && $transaction->payment_order_id) {
                 $orderStatus = $this->cashfreeService->getPaymentOrderStatus($transaction->payment_order_id);
@@ -865,15 +991,30 @@ class WalletController extends Controller
                         // Process successful payment
                         DB::beginTransaction();
                         try {
-                            $user = User::where('id', $transaction->user_id)->lockForUpdate()->first();
-                            $user->wallet_balance += $transaction->amount;
-                            $user->save();
+                            // Atomic wallet update
+                            $updated = User::where('id', $transaction->user_id)
+                                ->where(DB::raw('wallet_balance + ' . $transaction->amount), '<=', $this->maxWalletBalance)
+                                ->update(['wallet_balance' => DB::raw('wallet_balance + ' . $transaction->amount)]);
+                            
+                            if (!$updated) {
+                                throw new \Exception('Failed to update wallet balance');
+                            }
                             
                             $transaction->status = 'completed';
                             $transaction->payment_details = json_encode($orderStatus);
                             $transaction->save();
                             
                             DB::commit();
+                            
+                            Cache::forget('wallet_balance_' . $user->id);
+                            
+                            // Send notification
+                            $this->sendNotification($user->id, [
+                                'title' => 'Wallet Recharged Successfully',
+                                'message' => '₹' . number_format($transaction->amount, 2) . ' has been added to your wallet.',
+                                'type' => 'payment_success',
+                                'data' => ['amount' => $transaction->amount, 'transaction_id' => $transaction->id]
+                            ]);
                             
                             Log::info('Payment completed via status check', [
                                 'user_id' => $user->id,
@@ -902,7 +1043,8 @@ class WalletController extends Controller
                     'amount' => (float) $transaction->amount,
                     'formatted_amount' => '₹' . number_format($transaction->amount, 2),
                     'order_id' => $transaction->reference_id,
-                    'created_at' => $transaction->created_at
+                    'created_at' => $transaction->created_at,
+                    'updated_at' => $transaction->updated_at
                 ]
             ], 200);
 
@@ -940,6 +1082,13 @@ class WalletController extends Controller
                 ], 401);
             }
 
+            if (!is_numeric($id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid transaction ID'
+                ], 400);
+            }
+
             try {
                 $transaction = WalletTransaction::where('id', $id)
                     ->where('user_id', $user->id)
@@ -960,52 +1109,38 @@ class WalletController extends Controller
                 Log::error('Database error fetching transaction', [
                     'transaction_id' => $id,
                     'user_id' => $user->id,
-                    'error' => $e->getMessage()
+                    'error_code' => $e->getCode()
                 ]);
                 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to fetch transaction',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => 'Database error occurred'
                 ], 500);
             }
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'id' => $transaction->id,
-                    'amount' => (float) $transaction->amount,
-                    'formatted_amount' => '₹' . number_format($transaction->amount, 2),
-                    'type' => $transaction->type,
-                    'reason' => $transaction->reason,
-                    'status' => $transaction->status,
-                    'reference_id' => $transaction->reference_id,
-                    'payment_method' => $transaction->payment_method,
-                    'notes' => $transaction->notes,
-                    'created_at' => $transaction->created_at,
-                    'created_at_formatted' => $transaction->created_at->format('d M Y, h:i A'),
-                    'created_at_human' => $transaction->created_at->diffForHumans()
-                ]
+                'data' => $this->formatTransaction($transaction)
             ], 200);
             
         } catch (Exception $e) {
             Log::error('Unexpected error fetching transaction details', [
                 'transaction_id' => $id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch transaction',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
 
     /**
-     * Get wallet statement
+     * Get wallet statement for date range
      */
     public function statement(Request $request)
     {
@@ -1027,6 +1162,14 @@ class WalletController extends Controller
 
             $startDate = Carbon::parse($validated['start_date'])->startOfDay();
             $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+            
+            // Limit date range to 1 year max
+            if ($startDate->diffInDays($endDate) > 365) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Date range cannot exceed 365 days'
+                ], 422);
+            }
 
             try {
                 $transactions = $user->walletTransactions()
@@ -1048,14 +1191,7 @@ class WalletController extends Controller
                     'opening_balance' => $this->getOpeningBalance($user->id, $startDate),
                     'closing_balance' => (float) $user->wallet_balance,
                     'transactions' => $transactions->map(function ($transaction) {
-                        return [
-                            'date' => $transaction->created_at->format('Y-m-d H:i:s'),
-                            'type' => $transaction->type,
-                            'amount' => (float) $transaction->amount,
-                            'formatted_amount' => '₹' . number_format($transaction->amount, 2),
-                            'reason' => $transaction->reason,
-                            'reference_id' => $transaction->reference_id
-                        ];
+                        return $this->formatTransaction($transaction);
                     }),
                     'summary' => [
                         'total_credits' => (float) $transactions->where('type', 'credit')->sum('amount'),
@@ -1074,13 +1210,13 @@ class WalletController extends Controller
             } catch (QueryException $e) {
                 Log::error('Database error generating statement', [
                     'user_id' => $user->id,
-                    'error' => $e->getMessage()
+                    'error_code' => $e->getCode()
                 ]);
                 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to generate statement',
-                    'error' => config('app.debug') ? $e->getMessage() : 'Database error occurred'
+                    'error' => 'Database error occurred'
                 ], 500);
             }
 
@@ -1098,22 +1234,88 @@ class WalletController extends Controller
         } catch (Exception $e) {
             Log::error('Unexpected error generating statement', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
             
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate statement',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
+    }
+
+    // ============================================
+    // PRIVATE HELPER METHODS
+    // ============================================
+
+    /**
+     * Format transaction for response
+     */
+    private function formatTransaction($transaction): array
+    {
+        return [
+            'id' => $transaction->id,
+            'amount' => (float) $transaction->amount,
+            'formatted_amount' => '₹' . number_format($transaction->amount, 2),
+            'type' => $transaction->type,
+            'type_label' => $transaction->type === 'credit' ? 'Credit' : 'Debit',
+            'type_icon' => $transaction->type === 'credit' ? 'arrow-up' : 'arrow-down',
+            'type_color' => $transaction->type === 'credit' ? 'green' : 'red',
+            'reason' => $transaction->reason,
+            'status' => $transaction->status,
+            'status_label' => ucfirst($transaction->status),
+            'status_color' => $this->getStatusColor($transaction->status),
+            'reference_id' => $transaction->reference_id,
+            'payment_method' => $transaction->payment_method,
+            'notes' => $transaction->notes,
+            'created_at' => $transaction->created_at,
+            'created_at_formatted' => $transaction->created_at->format('d M Y, h:i A'),
+            'created_at_human' => $transaction->created_at->diffForHumans(),
+            'updated_at' => $transaction->updated_at
+        ];
+    }
+
+    /**
+     * Get status color for display
+     */
+    private function getStatusColor(string $status): string
+    {
+        return match ($status) {
+            'completed' => 'green',
+            'pending' => 'yellow',
+            'failed' => 'red',
+            default => 'gray'
+        };
+    }
+
+    /**
+     * Get daily total for user (credits or debits)
+     */
+    private function getDailyTotal(int $userId, string $type): float
+    {
+        return (float) WalletTransaction::where('user_id', $userId)
+            ->where('type', $type)
+            ->where('status', 'completed')
+            ->whereDate('created_at', Carbon::today())
+            ->sum('amount');
+    }
+
+    /**
+     * Get daily transaction count for user
+     */
+    private function getDailyTransactionCount(int $userId): int
+    {
+        return WalletTransaction::where('user_id', $userId)
+            ->where('status', 'completed')
+            ->whereDate('created_at', Carbon::today())
+            ->count();
     }
 
     /**
      * Generate opening balance before a date
      */
-    protected function getOpeningBalance($userId, $startDate)
+    private function getOpeningBalance(int $userId, Carbon $startDate): float
     {
         try {
             $credits = (float) WalletTransaction::where('user_id', $userId)
@@ -1141,41 +1343,90 @@ class WalletController extends Controller
     /**
      * Export statement as CSV
      */
-    protected function exportStatementCSV($statement)
+    private function exportStatementCSV(array $statement): \Illuminate\Http\Response
     {
-        $headers = ['Date', 'Type', 'Amount', 'Reason', 'Reference ID'];
+        $headers = ['Date', 'Type', 'Amount', 'Reason', 'Reference ID', 'Status'];
         
         $rows = [];
         foreach ($statement['transactions'] as $transaction) {
             $rows[] = [
-                $transaction['date'],
-                ucfirst($transaction['type']),
+                $transaction['created_at_formatted'],
+                $transaction['type_label'],
                 $transaction['formatted_amount'],
                 $transaction['reason'],
-                $transaction['reference_id']
+                $transaction['reference_id'],
+                $transaction['status_label']
             ];
         }
         
-        $csvContent = implode(',', $headers) . "\n";
+        $csvContent = "\xEF\xBB\xBF" . implode(',', $headers) . "\n";
         foreach ($rows as $row) {
-            $csvContent .= implode(',', array_map(function ($field) {
-                return '"' . str_replace('"', '""', $field) . '"';
-            }, $row)) . "\n";
+            $escapedRow = array_map(function ($field) {
+                if (is_string($field)) {
+                    $field = str_replace('"', '""', $field);
+                    if (strpos($field, ',') !== false || strpos($field, '"') !== false || strpos($field, "\n") !== false) {
+                        return '"' . $field . '"';
+                    }
+                }
+                return $field;
+            }, $row);
+            $csvContent .= implode(',', $escapedRow) . "\n";
         }
         
         $filename = "wallet_statement_{$statement['period']['start_date']}_{$statement['period']['end_date']}.csv";
         
         return response($csvContent)
-            ->header('Content-Type', 'text/csv')
-            ->header('Content-Disposition', "attachment; filename={$filename}")
-            ->header('Cache-Control', 'private, max-age=0, must-revalidate');
+            ->header('Content-Type', 'text/csv; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->header('Cache-Control', 'private, max-age=0, must-revalidate')
+            ->header('Pragma', 'public');
+    }
+
+    /**
+     * Sanitize user input
+     */
+    private function sanitizeInput(?string $input): ?string
+    {
+        if ($input === null) {
+            return null;
+        }
+        
+        $cleaned = strip_tags($input);
+        $cleaned = htmlspecialchars($cleaned, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $cleaned = preg_replace('/[\x00-\x1F\x7F]/', '', $cleaned);
+        
+        return mb_substr($cleaned, 0, 500);
     }
 
     /**
      * Generate unique reference ID
      */
-    protected function generateReferenceId()
+    private function generateReferenceId(): string
     {
-        return 'TXN_' . strtoupper(uniqid()) . '_' . date('YmdHis');
+        return 'TXN_' . strtoupper(uniqid()) . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(4));
+    }
+
+    /**
+     * Send notification to user
+     */
+    private function sendNotification(int $userId, array $data): void
+    {
+        try {
+            Notification::create([
+                'user_id' => $userId,
+                'title' => $data['title'],
+                'message' => $data['message'],
+                'type' => $data['type'],
+                'data' => json_encode($data['data'] ?? []),
+                'is_read' => false,
+                'created_at' => now()
+            ]);
+        } catch (Exception $e) {
+            Log::error('Failed to send wallet notification', [
+                'user_id' => $userId,
+                'type' => $data['type'],
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

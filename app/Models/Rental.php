@@ -18,13 +18,29 @@ class Rental extends Model
         'user_id',
         'vehicle_id',
         'customer_id',
-        'document_id',
+        'phase',
+        'status',
         'start_time',
         'end_time',
-        'status',
         'total_price',
-        'receipt_path',
+        'verification_fee_deducted',
+        'verification_transaction_id',
+        'is_verification_cached',
+        'verification_reference_id',
+        'verification_completed_at',
+        'document_id',
+        'document_upload_completed_at',
         'agreement_path',
+        'signed_agreement_path',
+        'customer_with_vehicle_image',
+        'vehicle_condition_video',
+        'agreement_signed_at',
+        'vehicle_in_good_condition',
+        'damage_amount',
+        'damage_description',
+        'damage_images',
+        'return_completed_at',
+        'receipt_path',
     ];
 
     /**
@@ -33,8 +49,8 @@ class Rental extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'start_time'  => 'datetime',
-        'end_time'    => 'datetime',
+        'start_time' => 'datetime',
+        'end_time' => 'datetime',
         'total_price' => 'decimal:2',
     ];
 

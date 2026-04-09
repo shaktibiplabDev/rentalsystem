@@ -1,59 +1,81 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\VehicleController;
-use App\Http\Controllers\Api\RentalController;
-use App\Http\Controllers\Api\DashboardController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\RentalController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SettingController;
-use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\VehicleController;
+use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\WebhookController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| API Routes - 100% Coverage with Revenue Protection
+| API Routes - SECURED VERSION
 |--------------------------------------------------------------------------
 |
-| IMPORTANT: Customer data is ADMIN ONLY to protect your revenue model.
-| Shop owners cannot see customer details to prevent data theft.
-| Only the check-by-license endpoint is available for rental verification.
+| This file contains all API routes with comprehensive security measures:
+| - Rate limiting on sensitive endpoints
+| - Admin middleware protection
+| - Sanctum authentication
+| - IP whitelisting for webhooks
+| - Security headers applied via bootstrap/app.php
 |
 */
 
 // =============================================
-// 🔐 PUBLIC AUTHENTICATION ROUTES
+// 🔐 PUBLIC AUTHENTICATION ROUTES (With Rate Limiting)
 // =============================================
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
 
-// =============================================
-// 📧 EMAIL VERIFICATION ROUTES (Public)
-// =============================================
-Route::prefix('email')->group(function () {
+// Registration and Login - Stricter rate limits
+Route::middleware(['throttle:10,15'])->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+});
+
+// Email verification with rate limiting
+Route::middleware(['throttle:5,15'])->prefix('email')->group(function () {
     Route::post('/verify/send', [AuthController::class, 'sendEmailVerification']);
     Route::post('/verify/otp', [AuthController::class, 'verifyEmailWithOtp']);
-    Route::get('/verify/token/{token}', [AuthController::class, 'verifyEmailWithToken']);
     Route::post('/verify/resend', [AuthController::class, 'resendEmailVerification']);
 });
 
-// =============================================
-// 🔐 PASSWORD RESET ROUTES (Public)
-// =============================================
-Route::prefix('password')->group(function () {
+// Password reset with rate limiting
+Route::middleware(['throttle:5,15'])->prefix('password')->group(function () {
     Route::post('/forgot', [AuthController::class, 'sendPasswordResetOtp']);
     Route::post('/reset', [AuthController::class, 'resetPasswordWithOtp']);
     Route::post('/resend-otp', [AuthController::class, 'resendPasswordResetOtp']);
 });
 
+// Email verification token route (no rate limit needed, single-use token)
+Route::get('/email/verify/token/{token}', [AuthController::class, 'verifyEmailWithToken'])
+    ->name('api.verification.verify');
+
+// =============================================
+// 🔐 GOOGLE LOGIN ROUTES
+// =============================================
+Route::prefix('auth/google')->group(function () {
+    Route::get('/auth-url', [AuthController::class, 'getGoogleAuthUrl']);
+    Route::post('/callback', [AuthController::class, 'handleGoogleCallback']);
+
+    // Protected Google routes
+    Route::middleware(['auth:sanctum', 'throttle:10,1'])->group(function () {
+        Route::post('/set-password', [AuthController::class, 'setPasswordForGoogleUser']);
+        Route::post('/link', [AuthController::class, 'linkGoogleAccount']);
+        Route::post('/unlink', [AuthController::class, 'unlinkGoogleAccount']);
+    });
+});
+
 // =============================================
 // 🔒 PROTECTED ROUTES (Authentication Required)
+// Security headers are automatically applied via bootstrap/app.php
 // =============================================
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // =============================================
     // 👤 AUTHENTICATION & USER PROFILE
@@ -66,7 +88,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // =============================================
-    // 🚗 VEHICLE MANAGEMENT (100% Coverage)
+    // 🚗 VEHICLE MANAGEMENT
     // =============================================
     Route::prefix('vehicles')->group(function () {
         Route::get('/', [VehicleController::class, 'index']);
@@ -80,10 +102,10 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // =============================================
-    // 👥 CUSTOMER MANAGEMENT - PROTECTED (ADMIN ONLY)
+    // 👥 CUSTOMER MANAGEMENT - ADMIN ONLY
     // Shop owners CANNOT access customer data to protect revenue
     // =============================================
-    
+
     // ✅ ADMIN ONLY - Full customer management
     Route::prefix('customers')->middleware('admin')->group(function () {
         Route::get('/', [CustomerController::class, 'index']);
@@ -97,7 +119,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/export', [CustomerController::class, 'export']);
         Route::get('/analytics', [CustomerController::class, 'analytics']);
     });
-    
+
     // ✅ INTERNAL USE ONLY - Minimal data for rental verification
     // This is the ONLY customer endpoint shop owners can access
     Route::prefix('customers')->group(function () {
@@ -105,21 +127,46 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // =============================================
-    // 📦 RENTAL MANAGEMENT (100% Coverage)
+    // 📦 RENTAL MANAGEMENT - MULTI-PHASE SYSTEM
     // =============================================
     Route::prefix('rentals')->group(function () {
-        Route::post('/start', [RentalController::class, 'start']);
-        Route::post('/{id}/end', [RentalController::class, 'end']);
+
+        // PHASE 1: Verify DL & Deduct Fee
+        Route::post('/phase1/verify', [RentalController::class, 'phase1Verify']);
+
+        // PHASE 2: Upload Documents & Generate Agreement
+        Route::post('/phase2/documents', [RentalController::class, 'phase2UploadDocuments']);
+
+        // PHASE 3: Sign Agreement, Take Photos/Video & Start Rental
+        Route::post('/{id}/phase3/sign', [RentalController::class, 'phase3SignAndHandover']);
+
+        // RETURN VEHICLE: End rental, assess damage, generate receipt
+        Route::post('/{id}/return', [RentalController::class, 'returnVehicle']);
+
+        // GET CURRENT PHASE STATUS
+        Route::get('/{id}/phase-status', [RentalController::class, 'getPhaseStatus']);
+
+        // CANCEL RENTAL (any phase - verification fee is NON-REFUNDABLE)
+        Route::post('/{id}/cancel', [RentalController::class, 'cancel']);
+
+        // =============================================
+        // 📋 RENTAL QUERY ENDPOINTS (NO ID)
+        // =============================================
+        Route::get('/statistics', [RentalController::class, 'statistics']);   // ⬅️ MUST come before any {id} route
         Route::get('/active', [RentalController::class, 'active']);
         Route::get('/history', [RentalController::class, 'history']);
-        Route::get('/{id}', [RentalController::class, 'show']);
-        Route::get('/statistics', [RentalController::class, 'statistics']);
-        Route::get('/{id}/agreement', [RentalController::class, 'downloadAgreement']);
-        Route::get('/{id}/receipt', [RentalController::class, 'downloadReceipt']);
+
+        // =============================================
+        // 🔍 RENTAL ENDPOINTS WITH ID (must be last)
+        // =============================================
+        Route::get('/{id}', [RentalController::class, 'show'])->where('id', '[0-9]+');  // only numeric
+        Route::get('/{id}/agreement', [RentalController::class, 'downloadAgreement'])->where('id', '[0-9]+');
+        Route::get('/{id}/signed-agreement', [RentalController::class, 'downloadSignedAgreement'])->where('id', '[0-9]+');
+        Route::get('/{id}/receipt', [RentalController::class, 'downloadReceipt'])->where('id', '[0-9]+');
     });
 
     // =============================================
-    // 📄 DOCUMENT MANAGEMENT (100% Coverage)
+    // 📄 DOCUMENT MANAGEMENT
     // =============================================
     Route::prefix('documents')->group(function () {
         // Regular user endpoints
@@ -127,28 +174,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [DocumentController::class, 'show']);
         Route::get('/{id}/download/{type}', [DocumentController::class, 'download'])
             ->where('type', 'aadhaar|license');
-        Route::get('/{id}/ocr-data', [DocumentController::class, 'getOcrData']);
-        Route::put('/{id}/verify', [DocumentController::class, 'verify']);
         Route::delete('/{id}', [DocumentController::class, 'destroy']);
-        
+
         // Admin only - Document management
         Route::middleware('admin')->group(function () {
             Route::get('/unverified', [DocumentController::class, 'unverified']);
-            Route::get('/fraud-suspected', [DocumentController::class, 'fraudSuspected']);
-            Route::get('/failed-verification', [DocumentController::class, 'failedVerification']);
-            Route::get('/with-aadhaar', [DocumentController::class, 'withAadhaar']);
-            Route::get('/without-aadhaar', [DocumentController::class, 'withoutAadhaar']);
-            Route::get('/missing-aadhaar', [DocumentController::class, 'missingAadhaar']);
             Route::post('/bulk-verify', [DocumentController::class, 'bulkVerify']);
-            Route::post('/bulk-reject', [DocumentController::class, 'bulkReject']);
+            Route::post('/{id}/verify', [DocumentController::class, 'verify']);
             Route::post('/{id}/reject', [DocumentController::class, 'reject']);
             Route::get('/analytics', [DocumentController::class, 'analytics']);
-            Route::post('/verify-all-pending', [DocumentController::class, 'verifyAllPending']);
         });
     });
 
     // =============================================
-    // 📊 DASHBOARD & STATISTICS (100% Coverage)
+    // 📊 DASHBOARD & STATISTICS
     // =============================================
     Route::prefix('dashboard')->group(function () {
         Route::get('/', [DashboardController::class, 'stats']);
@@ -160,7 +199,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // =============================================
-    // 💰 WALLET MANAGEMENT (100% Coverage)
+    // 💰 WALLET MANAGEMENT
     // =============================================
     Route::prefix('wallet')->group(function () {
         // Basic wallet operations
@@ -171,40 +210,37 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/deduct', [WalletController::class, 'deductMoney']);
         Route::post('/transfer', [WalletController::class, 'transfer']);
         Route::get('/statement', [WalletController::class, 'statement']);
-        
+
         // Cashfree Payment Gateway Integration
         Route::post('/recharge/initiate', [WalletController::class, 'initiateRecharge']);
         Route::get('/payment-status', [WalletController::class, 'checkPaymentStatus']);
-        Route::get('/payment-callback', [WalletController::class, 'paymentCallback']);
     });
 
     // =============================================
-    // 📈 REPORTS & ANALYTICS (100% Coverage)
+    // 📈 REPORTS & ANALYTICS
     // =============================================
     Route::prefix('reports')->group(function () {
-        // Reports accessible by all staff
+        // Reports accessible by authenticated users
         Route::get('/earnings', [ReportController::class, 'earnings']);
         Route::get('/rentals', [ReportController::class, 'rentals']);
         Route::get('/summary', [ReportController::class, 'summary']);
         Route::get('/top-vehicles', [ReportController::class, 'topVehicles']);
         Route::get('/top-customers', [ReportController::class, 'topCustomers']);
         Route::get('/documents', [ReportController::class, 'documentStatistics']);
-        Route::get('/export/{type}', [ReportController::class, 'export']);
-        
+        Route::get('/export/{type}', [ReportController::class, 'export'])
+            ->where('type', 'rentals|earnings|vehicles|customers');
+
         // Admin only reports
         Route::middleware('admin')->group(function () {
             Route::get('/verification-metrics', [ReportController::class, 'verificationMetrics']);
             Route::get('/fraud-detection', [ReportController::class, 'fraudDetectionReport']);
-            Route::get('/aadhaar-statistics', [ReportController::class, 'aadhaarStatistics']);
-            Route::get('/document-verification-costs', [ReportController::class, 'verificationCosts']);
-            Route::get('/cost-savings-report', [ReportController::class, 'costSavingsReport']);
             Route::get('/customer-analytics', [ReportController::class, 'customerAnalytics']);
             Route::get('/access-logs', [ReportController::class, 'accessLogs']);
         });
     });
 
     // =============================================
-    // ⚙️ USER SETTINGS (100% Coverage)
+    // ⚙️ USER SETTINGS
     // =============================================
     Route::prefix('settings')->group(function () {
         // User settings
@@ -217,18 +253,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{key}', [SettingController::class, 'updateSingle']);
         Route::delete('/{key}', [SettingController::class, 'destroy']);
         Route::delete('/', [SettingController::class, 'bulkDelete']);
-        
-        // Admin only - System settings
-        Route::middleware('admin')->group(function () {
-            Route::put('/verification/aadhaar-optional', [SettingController::class, 'setAadhaarOptional']);
-            Route::get('/verification/requirements', [SettingController::class, 'getVerificationRequirements']);
-            Route::put('/verification/price', [SettingController::class, 'setVerificationPrice']);
-            Route::put('/rental/lease-threshold', [SettingController::class, 'setLeaseThreshold']);
-        });
     });
 
     // =============================================
-    // 🔔 NOTIFICATIONS (100% Coverage)
+    // 🔔 NOTIFICATIONS
     // =============================================
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
@@ -244,73 +272,52 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // =============================================
-    // 👑 ADMIN ROUTES (100% Coverage)
+    // 👑 ADMIN ROUTES (Full Access)
     // =============================================
     Route::middleware('admin')->prefix('admin')->group(function () {
-        
+
         // User Management
         Route::prefix('users')->group(function () {
             Route::get('/', [AdminController::class, 'users']);
             Route::put('/{id}/role', [AdminController::class, 'updateUserRole']);
             Route::delete('/{id}', [AdminController::class, 'deleteUser']);
+            Route::get('/{id}/details', [AdminController::class, 'userDetails']);
         });
-        
+
         // Rental Management
         Route::prefix('rentals')->group(function () {
             Route::get('/', [AdminController::class, 'rentals']);
             Route::get('/stats', [AdminController::class, 'rentalStats']);
             Route::get('/fraud-alerts', [AdminController::class, 'fraudAlerts']);
             Route::post('/{id}/force-end', [AdminController::class, 'forceEndRental']);
-            Route::get('/without-aadhaar', [AdminController::class, 'rentalsWithoutAadhaar']);
             Route::get('/analytics', [AdminController::class, 'rentalAnalytics']);
         });
-        
+
         // Settings Management
         Route::prefix('settings')->group(function () {
             Route::get('/', [AdminController::class, 'getSettings']);
             Route::post('/verification-price', [AdminController::class, 'setVerificationPrice']);
             Route::post('/lease-threshold', [AdminController::class, 'setLeaseThreshold']);
-            Route::post('/ocr-confidence-threshold', [AdminController::class, 'setOcrConfidenceThreshold']);
-            Route::post('/aadhaar-required', [AdminController::class, 'setAadhaarRequired']);
-            Route::get('/verification-costs', [AdminController::class, 'getVerificationCosts']);
         });
-        
-        // Cashfree OCR Reports
-        Route::prefix('ocr')->group(function () {
-            Route::get('/statistics', [AdminController::class, 'ocrStatistics']);
-            Route::get('/fraud-patterns', [AdminController::class, 'fraudPatterns']);
-            Route::get('/quality-metrics', [AdminController::class, 'qualityMetrics']);
-            Route::get('/verification-logs', [AdminController::class, 'verificationLogs']);
-            Route::post('/retry-failed', [AdminController::class, 'retryFailedVerification']);
-            Route::get('/cost-analysis', [AdminController::class, 'ocrCostAnalysis']);
-            Route::get('/cost-savings', [AdminController::class, 'aadhaarCostSavings']);
-        });
-        
+
         // Statistics
         Route::prefix('stats')->group(function () {
             Route::get('/users', [AdminController::class, 'userStats']);
             Route::get('/vehicles', [AdminController::class, 'vehicleStats']);
             Route::get('/earnings', [AdminController::class, 'earningsStats']);
-            Route::get('/rentals', [AdminController::class, 'rentalStats']);
             Route::get('/dashboard', [AdminController::class, 'dashboardStats']);
             Route::get('/verification', [AdminController::class, 'verificationStats']);
             Route::get('/fraud', [AdminController::class, 'fraudStats']);
-            Route::get('/documents', [AdminController::class, 'documentStats']);
-            Route::get('/aadhaar-adoption', [AdminController::class, 'aadhaarAdoptionStats']);
-            Route::get('/customer-access', [AdminController::class, 'customerAccessStats']);
         });
-        
+
         // System Health & Monitoring
         Route::prefix('system')->group(function () {
             Route::get('/health', [AdminController::class, 'systemHealth']);
             Route::get('/logs', [AdminController::class, 'systemLogs']);
             Route::post('/clear-cache', [AdminController::class, 'clearCache']);
             Route::get('/cashfree-status', [AdminController::class, 'cashfreeStatus']);
-            Route::post('/sync-verifications', [AdminController::class, 'syncVerifications']);
-            Route::get('/verification-costs', [AdminController::class, 'verificationCostMonitoring']);
-            Route::post('/optimize-verification', [AdminController::class, 'optimizeVerificationSettings']);
         });
-        
+
         // Audit Logs
         Route::prefix('audit')->group(function () {
             Route::get('/customer-access', [AdminController::class, 'customerAccessLogs']);
@@ -322,9 +329,19 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // =============================================
-// 💳 CASHFREE WEBHOOKS (NO AUTH REQUIRED)
+// 💳 CASHFREE WEBHOOKS (IP Whitelisted - No Auth)
+// Security headers are still applied from bootstrap/app.php
 // =============================================
-Route::post('/webhooks/cashfree/payment', [WebhookController::class, 'handlePayment']);
+Route::prefix('webhooks/cashfree')->group(function () {
+    // Payment webhook - IP whitelisted internally in WebhookController
+    Route::post('/payment', [WebhookController::class, 'handlePayment']);
+
+    // Refund webhook
+    Route::post('/refund', [WebhookController::class, 'handleRefund']);
+
+    // Health check endpoint (no auth needed)
+    Route::get('/health', [WebhookController::class, 'healthCheck']);
+});
 
 // =============================================
 // 🔄 FALLBACK ROUTE FOR 404 ERRORS
@@ -332,7 +349,9 @@ Route::post('/webhooks/cashfree/payment', [WebhookController::class, 'handlePaym
 Route::fallback(function () {
     return response()->json([
         'success' => false,
-        'message'=> 'API endpoint not found',
-        'error' => 'The requested endpoint does not exist'
+        'message' => 'API endpoint not found',
+        'error' => 'The requested endpoint does not exist',
+        'path' => request()->path(),
+        'method' => request()->method(),
     ], 404);
 });
