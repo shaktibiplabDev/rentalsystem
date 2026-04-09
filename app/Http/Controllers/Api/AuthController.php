@@ -1322,7 +1322,7 @@ class AuthController extends Controller
                 'phone' => 'nullable|string|min:10|max:15|regex:/^[0-9]{10,15}$/',
             ]);
 
-            // Verify state (optional security)
+            // Verify state (CSRF protection)
             if ($validated['state']) {
                 $stateKey = "google_auth_state_{$validated['state']}";
                 if (! cache($stateKey)) {
@@ -1348,7 +1348,96 @@ class AuthController extends Controller
                 'id' => $googleUser->getId(),
             ]);
 
-            // ... rest of your method
+            // Check if user already exists by email
+            $existingUser = User::where('email', $googleUser->getEmail())->first();
+
+            if ($existingUser) {
+                // Existing user – link Google account if not already linked
+                if (! $existingUser->google_id) {
+                    $existingUser->update([
+                        'google_id' => $googleUser->getId(),
+                        'avatar' => $googleUser->getAvatar(),
+                        'is_google_user' => true,
+                        'google_verified_at' => now(),
+                    ]);
+                }
+                // Auto‑verify email if not already
+                if (! $existingUser->hasVerifiedEmail()) {
+                    $existingUser->markEmailAsVerified();
+                }
+
+                $user = $existingUser;
+                $isNewUser = false;
+            } else {
+                // New user – phone number is required
+                if (empty($validated['phone'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Phone number is required for new users',
+                        'data' => [
+                            'google_data' => [
+                                'name' => $googleUser->getName(),
+                                'email' => $googleUser->getEmail(),
+                                'avatar' => $googleUser->getAvatar(),
+                                'google_id' => $googleUser->getId(),
+                            ],
+                            'requires_phone' => true,
+                        ],
+                    ], 422);
+                }
+
+                // Check if phone is already taken
+                $phoneUser = User::where('phone', $validated['phone'])->first();
+                if ($phoneUser) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Phone number already registered',
+                        'errors' => ['phone' => ['This phone number is already in use.']],
+                    ], 422);
+                }
+
+                // Create new user
+                $user = User::create([
+                    'name' => $this->sanitizeInput($googleUser->getName()),
+                    'email' => $googleUser->getEmail(),
+                    'phone' => $validated['phone'],
+                    'google_id' => $googleUser->getId(),
+                    'avatar' => $googleUser->getAvatar(),
+                    'is_google_user' => true,
+                    'email_verified_at' => now(), // Google emails are verified
+                    'google_verified_at' => now(),
+                    'wallet_balance' => 0,
+                    'role' => 'user',
+                    'password' => null,
+                    'password_set_required' => true,
+                ]);
+
+                // Send welcome email
+                $this->sendGoogleWelcomeEmail($user);
+                $isNewUser = true;
+            }
+
+            // Generate API token
+            $deviceName = $validated['device_name'] ?? 'google_auth';
+            $token = $user->createToken($deviceName, ['*'], now()->addDays(30))->plainTextToken;
+
+            Log::info('Google authentication successful', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'is_new' => $isNewUser,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $isNewUser ? 'Registration successful' : 'Login successful',
+                'data' => [
+                    'user' => $this->formatUserData($user),
+                    'token' => $token,
+                    'token_expires_in' => 30,
+                    'is_new_user' => $isNewUser,
+                    'needs_password_setup' => $user->needsPasswordSetup(),
+                ],
+            ]);
         } catch (Exception $e) {
             Log::error('Google callback error: '.$e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
