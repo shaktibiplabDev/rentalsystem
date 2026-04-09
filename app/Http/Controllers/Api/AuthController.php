@@ -3,35 +3,41 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
 use App\Models\EmailVerification;
 use App\Models\PasswordReset;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
+use App\Models\User;
 use Carbon\Carbon;
 use Exception;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
-use Laravel\Sanctum\Exceptions\MissingAbilityException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 class AuthController extends Controller
 {
     // Security Constants
     protected $maxOtpAttempts = 5;
+
     protected $otpLockoutMinutes = 15;
+
     protected $maxEmailVerificationAttempts = 25;
+
     protected $emailVerificationLockoutHours = 1;
+
     protected $maxLoginAttempts = 5;
+
     protected $loginLockoutMinutes = 15;
+
     protected $minPasswordLength = 8;
+
     protected $tokenLength = 60;
 
     /**
@@ -44,7 +50,7 @@ class AuthController extends Controller
                 'name' => 'required|string|max:255|regex:/^[a-zA-Z\s\-]+$/',
                 'phone' => 'required|string|max:20|regex:/^[0-9]{10,15}$/|unique:users,phone',
                 'email' => 'nullable|email|max:255|unique:users,email',
-                'password' => 'required|string|min:' . $this->minPasswordLength . '|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{' . $this->minPasswordLength . ',}$/'
+                'password' => 'required|string|min:'.$this->minPasswordLength.'|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{'.$this->minPasswordLength.',}$/',
             ]);
 
             // Create user inside transaction (no email sending inside transaction)
@@ -57,7 +63,7 @@ class AuthController extends Controller
                     'email' => $validated['email'] ? $this->sanitizeInput($validated['email']) : null,
                     'password' => Hash::make($validated['password']),
                     'role' => 'user',
-                    'wallet_balance' => 0
+                    'wallet_balance' => 0,
                 ]);
 
                 DB::commit();
@@ -75,7 +81,7 @@ class AuthController extends Controller
                 } catch (Exception $e) {
                     Log::error('Failed to send verification email after registration', [
                         'user_id' => $user->id,
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
                     ]);
                     // Do not throw – registration still successful
                 }
@@ -87,12 +93,12 @@ class AuthController extends Controller
             } catch (Exception $e) {
                 Log::error('Token creation failed during registration', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => true,
-                    'message' => $user->email 
+                    'message' => $user->email
                         ? 'User registered successfully but token generation failed. Please verify your email.'
                         : 'User registered successfully but token generation failed.',
                     'data' => [
@@ -103,17 +109,17 @@ class AuthController extends Controller
                             'email' => $user->email,
                             'role' => $user->role,
                             'wallet_balance' => (float) $user->wallet_balance,
-                            'email_verified' => $user->hasVerifiedEmail()
+                            'email_verified' => $user->hasVerifiedEmail(),
                         ],
                         'token' => null,
-                        'requires_verification' => $user->email ? true : false
-                    ]
+                        'requires_verification' => $user->email ? true : false,
+                    ],
                 ], 201);
             }
 
             // Prepare response
             $message = 'User registered successfully.';
-            if ($user->email && !$emailSent) {
+            if ($user->email && ! $emailSent) {
                 $message .= ' However, the verification email could not be sent. Please request a new verification link later.';
             } elseif ($user->email && $emailSent) {
                 $message .= ' Please verify your email before logging in.';
@@ -130,22 +136,22 @@ class AuthController extends Controller
                         'email' => $user->email,
                         'role' => $user->role,
                         'wallet_balance' => (float) $user->wallet_balance,
-                        'email_verified' => $user->hasVerifiedEmail()
+                        'email_verified' => $user->hasVerifiedEmail(),
                     ],
                     'token' => $token,
-                    'requires_verification' => $user->email ? !$user->hasVerifiedEmail() : false
-                ]
+                    'requires_verification' => $user->email ? ! $user->hasVerifiedEmail() : false,
+                ],
             ], 201);
 
         } catch (ValidationException $e) {
             Log::warning('Registration validation failed', [
-                'errors' => array_keys($e->errors())
+                'errors' => array_keys($e->errors()),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (QueryException $e) {
             if ($e->errorInfo[1] == 1062 || str_contains($e->getMessage(), 'Duplicate entry')) {
@@ -155,32 +161,32 @@ class AuthController extends Controller
                     'success' => false,
                     'message' => 'Registration failed',
                     'errors' => [
-                        $field => ['This ' . $field . ' is already registered.']
-                    ]
+                        $field => ['This '.$field.' is already registered.'],
+                    ],
                 ], 422);
             }
 
             Log::error('Registration database error', [
                 'error_code' => $e->getCode(),
                 'sql_state' => $e->errorInfo[0] ?? null,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Registration failed due to database error',
-                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred during registration'
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred during registration',
             ], 500);
         } catch (Exception $e) {
             Log::error('Unexpected registration error', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Registration failed',
-                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred'
+                'error' => config('app.debug') ? $e->getMessage() : 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -193,18 +199,19 @@ class AuthController extends Controller
         try {
             $validated = $request->validate([
                 'login' => 'required|string|max:255',
-                'password' => 'required|string'
+                'password' => 'required|string',
             ]);
 
             // Rate limiting check
-            $rateLimitKey = 'login_attempts_' . strtolower($validated['login']);
+            $rateLimitKey = 'login_attempts_'.strtolower($validated['login']);
             $attempts = (int) Cache::get($rateLimitKey, 0);
-            
+
             if ($attempts >= $this->maxLoginAttempts) {
                 $remainingMinutes = Cache::ttl($rateLimitKey) / 60;
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Too many login attempts. Please try again after ' . ceil($remainingMinutes) . ' minutes.',
+                    'message' => 'Too many login attempts. Please try again after '.ceil($remainingMinutes).' minutes.',
                 ], 429);
             }
 
@@ -216,85 +223,85 @@ class AuthController extends Controller
             } catch (QueryException $e) {
                 Log::error('Database error during login', [
                     'login_field' => $field,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Login failed due to database error',
-                    'error' => 'An error occurred during login'
+                    'error' => 'An error occurred during login',
                 ], 500);
             }
 
-            if (!$user) {
+            if (! $user) {
                 Cache::put($rateLimitKey, $attempts + 1, now()->addMinutes($this->loginLockoutMinutes));
-                
+
                 Log::warning('Failed login attempt - user not found', [
                     'login' => $validated['login'],
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Authentication failed',
                     'errors' => [
-                        'login' => ['The provided credentials are incorrect.']
-                    ]
+                        'login' => ['The provided credentials are incorrect.'],
+                    ],
                 ], 401);
             }
 
             // Check if user is Google user without password
-            if ($user->is_google_user && !$user->hasPassword()) {
+            if ($user->is_google_user && ! $user->hasPassword()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This account uses Google login. Please use "Continue with Google" instead.',
                     'errors' => [
-                        'login' => ['Please use Google login for this account.']
+                        'login' => ['Please use Google login for this account.'],
                     ],
                     'data' => [
                         'use_google_login' => true,
-                        'email' => $user->email
-                    ]
+                        'email' => $user->email,
+                    ],
                 ], 401);
             }
 
             // CHECK EMAIL VERIFICATION FOR BOTH EMAIL AND PHONE LOGIN
-            if ($user->email && !$user->hasVerifiedEmail()) {
+            if ($user->email && ! $user->hasVerifiedEmail()) {
                 Log::warning('Login attempt with unverified email', [
                     'user_id' => $user->id,
                     'email' => $user->email,
-                    'login_method' => $field
+                    'login_method' => $field,
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Please verify your email address before logging in',
                     'errors' => [
-                        'email' => ['Email not verified. Please check your inbox for verification link.']
+                        'email' => ['Email not verified. Please check your inbox for verification link.'],
                     ],
                     'data' => [
                         'requires_verification' => true,
                         'email' => $user->email,
-                        'user_id' => $user->id
-                    ]
+                        'user_id' => $user->id,
+                    ],
                 ], 403);
             }
 
-            if (!Hash::check($validated['password'], $user->password)) {
+            if (! Hash::check($validated['password'], $user->password)) {
                 Cache::put($rateLimitKey, $attempts + 1, now()->addMinutes($this->loginLockoutMinutes));
-                
+
                 Log::warning('Failed login attempt - invalid password', [
                     'user_id' => $user->id,
                     'login' => $validated['login'],
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Authentication failed',
                     'errors' => [
-                        'login' => ['The provided credentials are incorrect.']
-                    ]
+                        'login' => ['The provided credentials are incorrect.'],
+                    ],
                 ], 401);
             }
 
@@ -306,20 +313,20 @@ class AuthController extends Controller
             } catch (Exception $e) {
                 Log::error('Token creation failed during login', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Login failed due to token generation error',
-                    'error' => 'Internal server error'
+                    'error' => 'Internal server error',
                 ], 500);
             }
 
             Log::info('User logged in successfully', [
                 'user_id' => $user->id,
                 'login' => $validated['login'],
-                'ip' => $request->ip()
+                'ip' => $request->ip(),
             ]);
 
             return response()->json([
@@ -328,29 +335,29 @@ class AuthController extends Controller
                 'data' => [
                     'user' => $this->formatUserData($user),
                     'token' => $token,
-                    'token_expires_in' => 30 // days
-                ]
+                    'token_expires_in' => 30, // days
+                ],
             ], 200);
         } catch (ValidationException $e) {
             Log::warning('Login validation failed', [
-                'errors' => array_keys($e->errors())
+                'errors' => array_keys($e->errors()),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Unexpected login error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Login failed',
-                'error' => 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -362,36 +369,37 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'email' => 'required|email|exists:users,email'
+                'email' => 'required|email|exists:users,email',
             ]);
 
             // Rate limiting check
-            $rateLimitKey = 'password_reset_otp_' . $validated['email'];
+            $rateLimitKey = 'password_reset_otp_'.$validated['email'];
             $attempts = (int) Cache::get($rateLimitKey, 0);
-            
+
             if ($attempts >= $this->maxOtpAttempts) {
                 $remainingMinutes = Cache::ttl($rateLimitKey) / 60;
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Too many OTP requests. Please try again after ' . ceil($remainingMinutes) . ' minutes.',
+                    'message' => 'Too many OTP requests. Please try again after '.ceil($remainingMinutes).' minutes.',
                 ], 429);
             }
 
             $user = User::where('email', $validated['email'])->first();
 
             // Check if user is Google user without password
-            if ($user->is_google_user && !$user->hasPassword()) {
+            if ($user->is_google_user && ! $user->hasPassword()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This account uses Google login. Please use "Continue with Google" to login.',
                     'errors' => [
-                        'email' => ['Password reset is not available for Google-only accounts.']
-                    ]
+                        'email' => ['Password reset is not available for Google-only accounts.'],
+                    ],
                 ], 400);
             }
 
             // Generate OTP (6 digits)
-            $otp = sprintf("%06d", mt_rand(1, 999999));
+            $otp = sprintf('%06d', mt_rand(1, 999999));
             $token = Str::random($this->tokenLength);
             $expiresAt = Carbon::now()->addMinutes(15);
 
@@ -402,7 +410,7 @@ class AuthController extends Controller
                     'token' => $token,
                     'otp' => $otp,
                     'expires_at' => $expiresAt,
-                    'is_used' => false
+                    'is_used' => false,
                 ]
             );
 
@@ -415,7 +423,7 @@ class AuthController extends Controller
 
                 Log::info('Password reset OTP sent', [
                     'email' => $user->email,
-                    'user_id' => $user->id
+                    'user_id' => $user->id,
                 ]);
 
                 return response()->json([
@@ -424,36 +432,36 @@ class AuthController extends Controller
                     'data' => [
                         'email' => $user->email,
                         'token' => $token,
-                        'expires_in' => 15
-                    ]
+                        'expires_in' => 15,
+                    ],
                 ], 200);
             } catch (Exception $e) {
                 Log::error('Failed to send password reset OTP email', [
                     'email' => $user->email,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to send OTP email. Please try again later.'
+                    'message' => 'Failed to send OTP email. Please try again later.',
                 ], 500);
             }
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error sending password reset OTP', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send OTP',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -466,15 +474,15 @@ class AuthController extends Controller
         try {
             $validated = $request->validate([
                 'email' => 'required|email|exists:users,email',
-                'token' => 'required|string|size:' . $this->tokenLength,
+                'token' => 'required|string|size:'.$this->tokenLength,
                 'otp' => 'required|string|size:6',
-                'password' => 'required|string|min:' . $this->minPasswordLength . '|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{' . $this->minPasswordLength . ',}$/'
+                'password' => 'required|string|min:'.$this->minPasswordLength.'|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{'.$this->minPasswordLength.',}$/',
             ]);
 
             // Rate limiting for reset attempts
-            $resetKey = 'password_reset_attempt_' . $validated['email'];
+            $resetKey = 'password_reset_attempt_'.$validated['email'];
             $attempts = (int) Cache::get($resetKey, 0);
-            
+
             if ($attempts >= 5) {
                 return response()->json([
                     'success' => false,
@@ -488,15 +496,15 @@ class AuthController extends Controller
                 ->where('is_used', false)
                 ->first();
 
-            if (!$passwordReset) {
+            if (! $passwordReset) {
                 Cache::put($resetKey, $attempts + 1, now()->addHours(1));
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid or expired OTP',
                     'errors' => [
-                        'otp' => ['The OTP is invalid or has already been used.']
-                    ]
+                        'otp' => ['The OTP is invalid or has already been used.'],
+                    ],
                 ], 422);
             }
 
@@ -505,8 +513,8 @@ class AuthController extends Controller
                     'success' => false,
                     'message' => 'OTP has expired',
                     'errors' => [
-                        'otp' => ['The OTP has expired. Please request a new one.']
-                    ]
+                        'otp' => ['The OTP has expired. Please request a new one.'],
+                    ],
                 ], 422);
             }
 
@@ -531,12 +539,12 @@ class AuthController extends Controller
 
                 Log::info('Password reset successful', [
                     'email' => $user->email,
-                    'user_id' => $user->id
+                    'user_id' => $user->id,
                 ]);
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Password has been reset successfully. Please login with your new password.'
+                    'message' => 'Password has been reset successfully. Please login with your new password.',
                 ], 200);
             } catch (Exception $e) {
                 DB::rollBack();
@@ -546,18 +554,18 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error resetting password', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reset password',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -569,31 +577,32 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'email' => 'required|email|exists:users,email'
+                'email' => 'required|email|exists:users,email',
             ]);
 
             // Rate limiting check
-            $rateLimitKey = 'password_reset_otp_' . $validated['email'];
+            $rateLimitKey = 'password_reset_otp_'.$validated['email'];
             $attempts = (int) Cache::get($rateLimitKey, 0);
-            
+
             if ($attempts >= $this->maxOtpAttempts) {
                 $remainingMinutes = Cache::ttl($rateLimitKey) / 60;
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Too many OTP requests. Please try again after ' . ceil($remainingMinutes) . ' minutes.',
+                    'message' => 'Too many OTP requests. Please try again after '.ceil($remainingMinutes).' minutes.',
                 ], 429);
             }
 
             $user = User::where('email', $validated['email'])->first();
 
             // Check if user is Google user without password
-            if ($user->is_google_user && !$user->hasPassword()) {
+            if ($user->is_google_user && ! $user->hasPassword()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This account uses Google login. Password reset is not available.',
                     'errors' => [
-                        'email' => ['Password reset is not available for Google-only accounts.']
-                    ]
+                        'email' => ['Password reset is not available for Google-only accounts.'],
+                    ],
                 ], 400);
             }
 
@@ -601,14 +610,14 @@ class AuthController extends Controller
                 ->where('is_used', false)
                 ->first();
 
-            $otp = sprintf("%06d", mt_rand(1, 999999));
+            $otp = sprintf('%06d', mt_rand(1, 999999));
             $token = $existingReset ? $existingReset->token : Str::random($this->tokenLength);
             $expiresAt = Carbon::now()->addMinutes(15);
 
             if ($existingReset) {
                 $existingReset->update([
                     'otp' => $otp,
-                    'expires_at' => $expiresAt
+                    'expires_at' => $expiresAt,
                 ]);
                 $token = $existingReset->token;
             } else {
@@ -617,7 +626,7 @@ class AuthController extends Controller
                     'token' => $token,
                     'otp' => $otp,
                     'expires_at' => $expiresAt,
-                    'is_used' => false
+                    'is_used' => false,
                 ]);
             }
 
@@ -628,7 +637,7 @@ class AuthController extends Controller
 
             Log::info('Password reset OTP resent', [
                 'email' => $user->email,
-                'user_id' => $user->id
+                'user_id' => $user->id,
             ]);
 
             return response()->json([
@@ -637,24 +646,24 @@ class AuthController extends Controller
                 'data' => [
                     'email' => $user->email,
                     'token' => $token,
-                    'expires_in' => 15
-                ]
+                    'expires_in' => 15,
+                ],
             ], 200);
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error resending password reset OTP', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to resend OTP',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -666,17 +675,17 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'email' => 'required|email|exists:users,email'
+                'email' => 'required|email|exists:users,email',
             ]);
 
             // Rate limiting
-            $rateLimitKey = 'email_verification_' . $validated['email'];
+            $rateLimitKey = 'email_verification_'.$validated['email'];
             $attempts = (int) Cache::get($rateLimitKey, 0);
-            
+
             if ($attempts >= $this->maxEmailVerificationAttempts) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Too many verification requests. Please try again after ' . $this->emailVerificationLockoutHours . ' hour(s).',
+                    'message' => 'Too many verification requests. Please try again after '.$this->emailVerificationLockoutHours.' hour(s).',
                 ], 429);
             }
 
@@ -685,12 +694,12 @@ class AuthController extends Controller
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 422);
             }
 
             $this->sendVerificationEmail($user);
-            
+
             Cache::put($rateLimitKey, $attempts + 1, now()->addHours($this->emailVerificationLockoutHours));
 
             return response()->json([
@@ -698,24 +707,24 @@ class AuthController extends Controller
                 'message' => 'Verification email sent successfully',
                 'data' => [
                     'email' => $user->email,
-                    'expires_in' => 24
-                ]
+                    'expires_in' => 24,
+                ],
             ], 200);
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error sending verification email', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send verification email',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -728,7 +737,7 @@ class AuthController extends Controller
         try {
             $validated = $request->validate([
                 'email' => 'required|email|exists:users,email',
-                'otp' => 'required|string|size:6'
+                'otp' => 'required|string|size:6',
             ]);
 
             $user = User::where('email', $validated['email'])->first();
@@ -736,7 +745,7 @@ class AuthController extends Controller
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 422);
             }
 
@@ -745,13 +754,13 @@ class AuthController extends Controller
                 ->where('is_used', false)
                 ->first();
 
-            if (!$verification) {
+            if (! $verification) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid OTP',
                     'errors' => [
-                        'otp' => ['The OTP is invalid.']
-                    ]
+                        'otp' => ['The OTP is invalid.'],
+                    ],
                 ], 422);
             }
 
@@ -760,8 +769,8 @@ class AuthController extends Controller
                     'success' => false,
                     'message' => 'OTP has expired',
                     'errors' => [
-                        'otp' => ['The OTP has expired. Please request a new verification email.']
-                    ]
+                        'otp' => ['The OTP has expired. Please request a new verification email.'],
+                    ],
                 ], 422);
             }
 
@@ -776,12 +785,12 @@ class AuthController extends Controller
 
                 Log::info('Email verified successfully', [
                     'user_id' => $user->id,
-                    'email' => $user->email
+                    'email' => $user->email,
                 ]);
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Email verified successfully'
+                    'message' => 'Email verified successfully',
                 ], 200);
             } catch (Exception $e) {
                 DB::rollBack();
@@ -791,17 +800,17 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error verifying email with OTP', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to verify email',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -816,17 +825,17 @@ class AuthController extends Controller
                 ->where('is_used', false)
                 ->first();
 
-            if (!$verification) {
+            if (! $verification) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid or expired verification link'
+                    'message' => 'Invalid or expired verification link',
                 ], 422);
             }
 
             if (Carbon::now()->gt($verification->expires_at)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Verification link has expired'
+                    'message' => 'Verification link has expired',
                 ], 422);
             }
 
@@ -835,7 +844,7 @@ class AuthController extends Controller
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 422);
             }
 
@@ -850,21 +859,21 @@ class AuthController extends Controller
 
                 Log::info('Email verified via token', [
                     'user_id' => $user->id,
-                    'email' => $user->email
+                    'email' => $user->email,
                 ]);
 
                 // Redirect to frontend success page
-                return redirect()->to(config('app.frontend_url') . '/email-verified?success=1');
+                return redirect()->to(config('app.frontend_url').'/email-verified?success=1');
             } catch (Exception $e) {
                 DB::rollBack();
                 throw $e;
             }
         } catch (Exception $e) {
             Log::error('Error verifying email with token', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
-            return redirect()->to(config('app.frontend_url') . '/email-verified?error=1');
+            return redirect()->to(config('app.frontend_url').'/email-verified?error=1');
         }
     }
 
@@ -875,17 +884,17 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'email' => 'required|email|exists:users,email'
+                'email' => 'required|email|exists:users,email',
             ]);
 
             // Rate limiting
-            $rateLimitKey = 'email_verification_' . $validated['email'];
+            $rateLimitKey = 'email_verification_'.$validated['email'];
             $attempts = (int) Cache::get($rateLimitKey, 0);
-            
+
             if ($attempts >= $this->maxEmailVerificationAttempts) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Too many verification requests. Please try again after ' . $this->emailVerificationLockoutHours . ' hour(s).',
+                    'message' => 'Too many verification requests. Please try again after '.$this->emailVerificationLockoutHours.' hour(s).',
                 ], 429);
             }
 
@@ -894,12 +903,12 @@ class AuthController extends Controller
             if ($user->hasVerifiedEmail()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Email already verified'
+                    'message' => 'Email already verified',
                 ], 422);
             }
 
             $this->sendVerificationEmail($user);
-            
+
             Cache::put($rateLimitKey, $attempts + 1, now()->addHours($this->emailVerificationLockoutHours));
 
             return response()->json([
@@ -907,24 +916,24 @@ class AuthController extends Controller
                 'message' => 'Verification email resent successfully',
                 'data' => [
                     'email' => $user->email,
-                    'expires_in' => 24
-                ]
+                    'expires_in' => 24,
+                ],
             ], 200);
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Error resending verification email', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to resend verification email',
-                'error' => 'Internal server error'
+                'error' => 'Internal server error',
             ], 500);
         }
     }
@@ -937,27 +946,27 @@ class AuthController extends Controller
         try {
             $user = $request->user();
 
-            if (!$user) {
+            if (! $user) {
                 Log::warning('Logout attempt with no authenticated user', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
             $currentToken = $user->currentAccessToken();
 
-            if (!$currentToken) {
+            if (! $currentToken) {
                 Log::warning('Logout attempt with no current token', [
-                    'user_id' => $user->id
+                    'user_id' => $user->id,
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'No active session found'
+                    'message' => 'No active session found',
                 ], 400);
             }
 
@@ -966,40 +975,40 @@ class AuthController extends Controller
             } catch (QueryException $e) {
                 Log::error('Database error during token deletion', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Logout failed due to database error',
-                    'error' => 'Database error occurred'
+                    'error' => 'Database error occurred',
                 ], 500);
             }
 
             Log::info('User logged out successfully', [
                 'user_id' => $user->id,
-                'ip' => $request->ip()
+                'ip' => $request->ip(),
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Logged out successfully'
+                'message' => 'Logged out successfully',
             ], 200);
         } catch (UnauthorizedHttpException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         } catch (Exception $e) {
             Log::error('Unexpected logout error', [
                 'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Logout failed',
-                'error' => 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -1012,14 +1021,14 @@ class AuthController extends Controller
         try {
             $user = $request->user();
 
-            if (!$user) {
+            if (! $user) {
                 Log::warning('Unauthenticated access to user details', [
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -1028,41 +1037,41 @@ class AuthController extends Controller
                     'total_rentals' => $user->rentals()->count(),
                     'active_rentals' => $user->rentals()->where('status', 'active')->count(),
                     'completed_rentals' => $user->rentals()->where('status', 'completed')->count(),
-                    'total_spent' => (float) $user->rentals()->where('status', 'completed')->sum('total_price')
+                    'total_spent' => (float) $user->rentals()->where('status', 'completed')->sum('total_price'),
                 ];
             } catch (QueryException $e) {
                 Log::warning('Failed to load user statistics', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 $userStats = [
                     'total_rentals' => 0,
                     'active_rentals' => 0,
                     'completed_rentals' => 0,
-                    'total_spent' => 0
+                    'total_spent' => 0,
                 ];
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $this->formatUserData($user, $userStats)
+                'data' => $this->formatUserData($user, $userStats),
             ], 200);
         } catch (UnauthorizedHttpException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         } catch (Exception $e) {
             Log::error('Failed to fetch user details', [
                 'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch user details',
-                'error' => 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -1075,41 +1084,41 @@ class AuthController extends Controller
         try {
             $validated = $request->validate([
                 'current_password' => 'required|string',
-                'new_password' => 'required|string|min:' . $this->minPasswordLength . '|confirmed|different:current_password|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{' . $this->minPasswordLength . ',}$/'
+                'new_password' => 'required|string|min:'.$this->minPasswordLength.'|confirmed|different:current_password|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{'.$this->minPasswordLength.',}$/',
             ]);
 
             $user = $request->user();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
             // Check if user has a password (for Google users who haven't set password)
-            if (!$user->hasPassword()) {
+            if (! $user->hasPassword()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You don\'t have a password set. Please use "Set Password" option instead.',
                     'errors' => [
-                        'current_password' => ['No password set for this account.']
-                    ]
+                        'current_password' => ['No password set for this account.'],
+                    ],
                 ], 400);
             }
 
-            if (!Hash::check($validated['current_password'], $user->password)) {
+            if (! Hash::check($validated['current_password'], $user->password)) {
                 Log::warning('Failed password change attempt - incorrect current password', [
                     'user_id' => $user->id,
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Current password is incorrect',
                     'errors' => [
-                        'current_password' => ['The current password is incorrect.']
-                    ]
+                        'current_password' => ['The current password is incorrect.'],
+                    ],
                 ], 401);
             }
 
@@ -1118,8 +1127,8 @@ class AuthController extends Controller
                     'success' => false,
                     'message' => 'New password must be different from current password',
                     'errors' => [
-                        'new_password' => ['New password must be different from current password.']
-                    ]
+                        'new_password' => ['New password must be different from current password.'],
+                    ],
                 ], 422);
             }
 
@@ -1130,13 +1139,13 @@ class AuthController extends Controller
 
                 // CRITICAL SECURITY: Revoke ALL tokens and force re-login
                 $user->tokens()->delete();
-                
+
                 // Create new token for current session
                 $newToken = $user->createToken('auth_token', ['*'], now()->addDays(30))->plainTextToken;
 
                 Log::info('User changed password successfully', [
                     'user_id' => $user->id,
-                    'ip' => $request->ip()
+                    'ip' => $request->ip(),
                 ]);
 
                 return response()->json([
@@ -1144,47 +1153,47 @@ class AuthController extends Controller
                     'message' => 'Password changed successfully. Please use the new token for future requests.',
                     'data' => [
                         'new_token' => $newToken,
-                        'token_expires_in' => 30
-                    ]
+                        'token_expires_in' => 30,
+                    ],
                 ], 200);
             } catch (QueryException $e) {
                 Log::error('Database error during password change', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to update password due to database error',
-                    'error' => 'Database error occurred'
+                    'error' => 'Database error occurred',
                 ], 500);
             }
         } catch (ValidationException $e) {
             Log::warning('Password change validation failed', [
                 'errors' => array_keys($e->errors()),
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (UnauthorizedHttpException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         } catch (Exception $e) {
             Log::error('Unexpected password change error', [
                 'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to change password',
-                'error' => 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -1197,10 +1206,10 @@ class AuthController extends Controller
         try {
             $user = $request->user();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -1210,7 +1219,7 @@ class AuthController extends Controller
             } catch (Exception $e) {
                 Log::warning('Failed to revoke current token during refresh', [
                     'user_id' => $user->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -1219,13 +1228,13 @@ class AuthController extends Controller
             } catch (Exception $e) {
                 Log::error('Token creation failed during refresh', [
                     'user_id' => $user->id,
-                    'error_code' => $e->getCode()
+                    'error_code' => $e->getCode(),
                 ]);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to refresh token',
-                    'error' => 'Internal server error'
+                    'error' => 'Internal server error',
                 ], 500);
             }
 
@@ -1234,19 +1243,19 @@ class AuthController extends Controller
                 'message' => 'Token refreshed successfully',
                 'data' => [
                     'token' => $token,
-                    'expires_in' => 30
-                ]
+                    'expires_in' => 30,
+                ],
             ], 200);
         } catch (Exception $e) {
             Log::error('Token refresh error', [
                 'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id
+                'user_id' => $request->user()?->id,
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to refresh token',
-                'error' => 'An unexpected error occurred'
+                'error' => 'An unexpected error occurred',
             ], 500);
         }
     }
@@ -1263,35 +1272,35 @@ class AuthController extends Controller
         try {
             // Generate state to prevent CSRF
             $state = Str::random(40);
-            
+
             // Store state in cache (expires in 10 minutes)
             cache(["google_auth_state_{$state}" => true], now()->addMinutes(10));
-            
+
             // Get redirect URL for mobile app to open in WebView
             $redirectUrl = Socialite::driver('google')
                 ->stateless()
                 ->with(['state' => $state])
                 ->redirect()
                 ->getTargetUrl();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
                     'auth_url' => $redirectUrl,
-                    'state' => $state
-                ]
+                    'state' => $state,
+                ],
             ]);
         } catch (Exception $e) {
             Log::error('Google auth URL error', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to initialize Google login',
-                'error' => 'Please try again'
+                'error' => 'Please try again',
             ], 500);
         }
     }
-    
+
     /**
      * Handle Google OAuth callback
      * Mobile app sends the authorization code
@@ -1299,191 +1308,62 @@ class AuthController extends Controller
     public function handleGoogleCallback(Request $request)
     {
         try {
+            Log::info('Google callback received', [
+                'code_present' => $request->has('code'),
+                'state_present' => $request->has('state'),
+                'error' => $request->get('error'),
+                'full_url' => $request->fullUrl(),
+            ]);
+
             $validated = $request->validate([
                 'code' => 'required|string',
                 'state' => 'nullable|string',
                 'device_name' => 'nullable|string|max:255',
-                'phone' => 'nullable|string|min:10|max:15|regex:/^[0-9]{10,15}$/'
+                'phone' => 'nullable|string|min:10|max:15|regex:/^[0-9]{10,15}$/',
             ]);
-            
+
             // Verify state (optional security)
             if ($validated['state']) {
                 $stateKey = "google_auth_state_{$validated['state']}";
-                if (!cache($stateKey)) {
+                if (! cache($stateKey)) {
                     Log::warning('Invalid Google auth state', ['state' => substr($validated['state'], 0, 20)]);
+
                     return response()->json([
                         'success' => false,
-                        'message' => 'Invalid state parameter'
+                        'message' => 'Invalid state parameter',
                     ], 400);
                 }
                 cache()->forget($stateKey);
             }
-            
+
             // Get user from Google
+            Log::info('Attempting to get Google user');
             $googleUser = Socialite::driver('google')
                 ->stateless()
                 ->user();
-            
-            if (!$googleUser || !$googleUser->getEmail()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to get Google user information'
-                ], 400);
-            }
-            
-            // Sanitize Google user data
-            $googleName = $this->sanitizeInput($googleUser->getName());
-            $googleEmail = $this->sanitizeInput($googleUser->getEmail());
-            $googleAvatar = filter_var($googleUser->getAvatar(), FILTER_VALIDATE_URL) ? $googleUser->getAvatar() : null;
-            
-            // Check if user exists by email
-            $existingUser = User::where('email', $googleEmail)->first();
-            
-            if ($existingUser) {
-                // EXISTING USER - Link Google account if not already
-                if (!$existingUser->google_id) {
-                    $existingUser->update([
-                        'google_id' => $googleUser->getId(),
-                        'avatar' => $googleAvatar,
-                        'is_google_user' => true,
-                        'google_verified_at' => now()
-                    ]);
-                }
-                
-                // Auto-verify email if not already
-                if (!$existingUser->hasVerifiedEmail()) {
-                    $existingUser->markEmailAsVerified();
-                }
-                
-                // Login existing user
-                $token = $existingUser->createToken($validated['device_name'] ?? 'auth_token', ['*'], now()->addDays(30))->plainTextToken;
-                
-                Log::info('Google login successful (existing user)', [
-                    'user_id' => $existingUser->id,
-                    'email' => $existingUser->email
-                ]);
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Login successful',
-                    'data' => [
-                        'user' => $this->formatUserData($existingUser),
-                        'token' => $token,
-                        'token_expires_in' => 30,
-                        'is_new_user' => false,
-                        'needs_phone_update' => false
-                    ]
-                ]);
-            }
-            
-            // Check if user exists by google_id
-            $userByGoogleId = User::where('google_id', $googleUser->getId())->first();
-            
-            if ($userByGoogleId) {
-                $token = $userByGoogleId->createToken($validated['device_name'] ?? 'auth_token', ['*'], now()->addDays(30))->plainTextToken;
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Login successful',
-                    'data' => [
-                        'user' => $this->formatUserData($userByGoogleId),
-                        'token' => $token,
-                        'token_expires_in' => 30,
-                        'is_new_user' => false,
-                        'needs_phone_update' => false
-                    ]
-                ]);
-            }
-            
-            // NEW USER - Phone number is required
-            if (!$validated['phone']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Phone number is required',
-                    'data' => [
-                        'google_data' => [
-                            'name' => $googleName,
-                            'email' => $googleEmail,
-                            'avatar' => $googleAvatar,
-                            'google_id' => $googleUser->getId()
-                        ],
-                        'requires_phone' => true
-                    ]
-                ], 422);
-            }
-            
-            // Check if phone already exists
-            $existingPhone = User::where('phone', $validated['phone'])->first();
-            
-            if ($existingPhone) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Phone number already registered',
-                    'errors' => [
-                        'phone' => ['This phone number is already registered. Please login or use a different number.']
-                    ]
-                ], 422);
-            }
-            
-            // Create new user with Google data + provided phone
-            $newUser = User::create([
-                'name' => $googleName,
-                'email' => $googleEmail,
-                'phone' => $validated['phone'],
-                'google_id' => $googleUser->getId(),
-                'avatar' => $googleAvatar,
-                'is_google_user' => true,
-                'google_verified_at' => now(),
-                'email_verified_at' => now(),
-                'password' => null,
-                'password_set_required' => true,
-                'wallet_balance' => 0,
-                'role' => 'user'
+
+            Log::info('Google user retrieved', [
+                'email' => $googleUser->getEmail(),
+                'name' => $googleUser->getName(),
+                'id' => $googleUser->getId(),
             ]);
-            
-            // Send welcome email
-            $this->sendGoogleWelcomeEmail($newUser);
-            
-            $token = $newUser->createToken($validated['device_name'] ?? 'auth_token', ['*'], now()->addDays(30))->plainTextToken;
-            
-            Log::info('New user registered via Google', [
-                'user_id' => $newUser->id,
-                'email' => $newUser->email,
-                'phone' => $newUser->phone
-            ]);
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Registration successful! Please set a password for future logins.',
-                'data' => [
-                    'user' => $this->formatUserData($newUser),
-                    'token' => $token,
-                    'token_expires_in' => 30,
-                    'is_new_user' => true,
-                    'needs_password_setup' => true
-                ]
-            ]);
-            
-        } catch (ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
+
+            // ... rest of your method
         } catch (Exception $e) {
-            Log::error('Google callback error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+            Log::error('Google callback error: '.$e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Google authentication failed',
-                'error' => 'Please try again'
+                'error' => config('app.debug') ? $e->getMessage() : 'Please try again',
             ], 500);
         }
     }
-    
+
     /**
      * Set password for Google users (after registration)
      */
@@ -1491,67 +1371,67 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'password' => 'required|string|min:' . $this->minPasswordLength . '|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{' . $this->minPasswordLength . ',}$/'
+                'password' => 'required|string|min:'.$this->minPasswordLength.'|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{'.$this->minPasswordLength.',}$/',
             ]);
-            
+
             $user = $request->user();
-            
-            if (!$user) {
+
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
-            
-            if (!$user->is_google_user) {
+
+            if (! $user->is_google_user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This feature is only for Google users'
+                    'message' => 'This feature is only for Google users',
                 ], 400);
             }
-            
+
             if ($user->hasPassword()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Password already set'
+                    'message' => 'Password already set',
                 ], 400);
             }
-            
+
             $user->update([
                 'password' => Hash::make($validated['password']),
-                'password_set_required' => false
+                'password_set_required' => false,
             ]);
-            
+
             Log::info('Password set for Google user', ['user_id' => $user->id]);
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Password set successfully. You can now login with email/password as well.',
                 'data' => [
-                    'user' => $this->formatUserData($user)
-                ]
+                    'user' => $this->formatUserData($user),
+                ],
             ]);
-            
+
         } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $e->errors()
+                'errors' => $e->errors(),
             ], 422);
         } catch (Exception $e) {
             Log::error('Set password error', [
                 'user_id' => $request->user()?->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to set password',
-                'error' => 'Please try again'
+                'error' => 'Please try again',
             ], 500);
         }
     }
-    
+
     /**
      * Link Google account to existing user account
      */
@@ -1559,76 +1439,76 @@ class AuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'code' => 'required|string'
+                'code' => 'required|string',
             ]);
-            
+
             $user = $request->user();
-            
-            if (!$user) {
+
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
-            
+
             if ($user->google_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Google account already linked'
+                    'message' => 'Google account already linked',
                 ], 400);
             }
-            
+
             $googleUser = Socialite::driver('google')
                 ->stateless()
                 ->user();
-            
+
             // Check if this Google account is linked to another user
             $existingUser = User::where('google_id', $googleUser->getId())
                 ->where('id', '!=', $user->id)
                 ->first();
-            
+
             if ($existingUser) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This Google account is already linked to another user'
+                    'message' => 'This Google account is already linked to another user',
                 ], 400);
             }
-            
+
             // Link Google account
             $user->update([
                 'google_id' => $googleUser->getId(),
                 'avatar' => filter_var($googleUser->getAvatar(), FILTER_VALIDATE_URL) ? $googleUser->getAvatar() : null,
                 'is_google_user' => true,
-                'google_verified_at' => now()
+                'google_verified_at' => now(),
             ]);
-            
+
             // Auto-verify email if not already
-            if (!$user->hasVerifiedEmail() && $user->email) {
+            if (! $user->hasVerifiedEmail() && $user->email) {
                 $user->markEmailAsVerified();
             }
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Google account linked successfully',
                 'data' => [
-                    'user' => $this->formatUserData($user)
-                ]
+                    'user' => $this->formatUserData($user),
+                ],
             ]);
-            
+
         } catch (Exception $e) {
             Log::error('Link Google account error', [
                 'user_id' => $request->user()?->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to link Google account',
-                'error' => 'Please try again'
+                'error' => 'Please try again',
             ], 500);
         }
     }
-    
+
     /**
      * Unlink Google account from user account
      */
@@ -1636,48 +1516,48 @@ class AuthController extends Controller
     {
         try {
             $user = $request->user();
-            
-            if (!$user) {
+
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
-            
-            if (!$user->google_id) {
+
+            if (! $user->google_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No Google account linked'
+                    'message' => 'No Google account linked',
                 ], 400);
             }
-            
+
             // Check if user has password to login without Google
-            if (!$user->hasPassword()) {
+            if (! $user->hasPassword()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot unlink Google account. Please set a password first.'
+                    'message' => 'Cannot unlink Google account. Please set a password first.',
                 ], 400);
             }
-            
+
             $user->update([
                 'google_id' => null,
-                'is_google_user' => false
+                'is_google_user' => false,
             ]);
-            
+
             return response()->json([
                 'success' => true,
-                'message' => 'Google account unlinked successfully'
+                'message' => 'Google account unlinked successfully',
             ]);
-            
+
         } catch (Exception $e) {
             Log::error('Unlink Google account error', [
                 'user_id' => $request->user()?->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to unlink Google account'
+                'message' => 'Failed to unlink Google account',
             ], 500);
         }
     }
@@ -1692,13 +1572,13 @@ class AuthController extends Controller
     private function sendVerificationEmail($user)
     {
         // Check if email_verifications table exists (optional safety)
-        if (!Schema::hasTable('email_verifications')) {
+        if (! Schema::hasTable('email_verifications')) {
             Log::error('email_verifications table does not exist');
             throw new Exception('Verification table not found');
         }
 
         $token = Str::random(60);
-        $otp = sprintf("%06d", mt_rand(1, 999999));
+        $otp = sprintf('%06d', mt_rand(1, 999999));
         $expiresAt = Carbon::now()->addHours(24);
 
         EmailVerification::updateOrCreate(
@@ -1707,7 +1587,7 @@ class AuthController extends Controller
                 'token' => $token,
                 'otp' => $otp,
                 'expires_at' => $expiresAt,
-                'is_used' => false
+                'is_used' => false,
             ]
         );
 
@@ -1728,7 +1608,7 @@ class AuthController extends Controller
             <body>
                 <div class='container'>
                     <h2>Welcome to Vehicle Rental System!</h2>
-                    <p>Dear " . htmlspecialchars($user->name) . ",</p>
+                    <p>Dear ".htmlspecialchars($user->name).",</p>
                     <p>Thank you for registering. Please verify your email address to complete your registration.</p>
                     
                     <h3>Option 1: Use OTP</h3>
@@ -1774,7 +1654,7 @@ class AuthController extends Controller
             <body>
                 <div class='container'>
                     <h2>Password Reset Request</h2>
-                    <p>Dear " . htmlspecialchars($name) . ",</p>
+                    <p>Dear ".htmlspecialchars($name).",</p>
                     <p>We received a request to reset your password. Use the following OTP to complete the process:</p>
                     <div class='otp-code'>{$otp}</div>
                     <p>This OTP is valid for 15 minutes.</p>
@@ -1812,18 +1692,18 @@ class AuthController extends Controller
                 </head>
                 <body>
                     <div class='container'>
-                        <h2>Welcome to Vehicle Rental System, " . htmlspecialchars($user->name) . "!</h2>
+                        <h2>Welcome to Vehicle Rental System, ".htmlspecialchars($user->name).'!</h2>
                         <p>Your account has been created successfully using Google login.</p>
-                        <p><strong>Email:</strong> " . htmlspecialchars($user->email) . "</p>
-                        <p><strong>Phone:</strong> " . htmlspecialchars($user->phone) . "</p>
+                        <p><strong>Email:</strong> '.htmlspecialchars($user->email).'</p>
+                        <p><strong>Phone:</strong> '.htmlspecialchars($user->phone).'</p>
                         <p>To enhance security, please set a password for your account. This will allow you to login even without Google.</p>
                         <p>If you have any questions, feel free to contact our support team.</p>
                         <p>Happy Renting!<br>Vehicle Rental Team</p>
                     </div>
                 </body>
                 </html>
-            ";
-            
+            ';
+
             Mail::send([], [], function ($message) use ($user, $subject, $htmlContent) {
                 $message->to($user->email)
                     ->subject($subject)
@@ -1832,7 +1712,7 @@ class AuthController extends Controller
         } catch (Exception $e) {
             Log::error('Failed to send Google welcome email', [
                 'user_id' => $user->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -1845,11 +1725,11 @@ class AuthController extends Controller
         if ($input === null) {
             return null;
         }
-        
+
         $cleaned = strip_tags($input);
         $cleaned = htmlspecialchars($cleaned, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $cleaned = preg_replace('/[\x00-\x1F\x7F]/', '', $cleaned);
-        
+
         return mb_substr($cleaned, 0, 255);
     }
 
@@ -1871,13 +1751,13 @@ class AuthController extends Controller
             'has_password' => $user->hasPassword(),
             'needs_password_setup' => $user->needsPasswordSetup(),
             'created_at' => $user->created_at,
-            'updated_at' => $user->updated_at
+            'updated_at' => $user->updated_at,
         ];
-        
+
         if ($stats) {
             $data['statistics'] = $stats;
         }
-        
+
         return $data;
     }
 
@@ -1886,7 +1766,7 @@ class AuthController extends Controller
      */
     private function getDefaultAvatar($name)
     {
-        return 'https://ui-avatars.com/api/?name=' . urlencode($name) . '&background=4F46E5&color=fff';
+        return 'https://ui-avatars.com/api/?name='.urlencode($name).'&background=4F46E5&color=fff';
     }
 
     /**
