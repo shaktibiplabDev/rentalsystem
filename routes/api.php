@@ -61,7 +61,7 @@ Route::get('/email/verify/token/{token}', [AuthController::class, 'verifyEmailWi
 // =============================================
 Route::prefix('auth/google')->group(function () {
     Route::get('/auth-url', [AuthController::class, 'getGoogleAuthUrl']);
-    Route::post('/callback', [AuthController::class, 'handleGoogleCallback']);
+    Route::get('/callback', [AuthController::class, 'handleGoogleCallback']);
 
     // Protected Google routes
     Route::middleware(['auth:sanctum', 'throttle:10,1'])->group(function () {
