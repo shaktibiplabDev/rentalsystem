@@ -335,13 +335,16 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 // Security headers are still applied from bootstrap/app.php
 // =============================================
 Route::prefix('webhooks/cashfree')->group(function () {
-    // Payment webhook - IP whitelisted internally in WebhookController
+    // Health check for Cashfree verification (GET)
+    Route::get('/payment', [WebhookController::class, 'healthCheck']);
+    
+    // Payment webhook - actual event (POST)
     Route::post('/payment', [WebhookController::class, 'handlePayment']);
 
     // Refund webhook
     Route::post('/refund', [WebhookController::class, 'handleRefund']);
 
-    // Health check endpoint (no auth needed)
+    // Optional additional health check
     Route::get('/health', [WebhookController::class, 'healthCheck']);
 });
 
