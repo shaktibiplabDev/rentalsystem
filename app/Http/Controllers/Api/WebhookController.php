@@ -34,7 +34,7 @@ class WebhookController extends Controller
         $payload = $request->getContent();
 
         if (empty($payload)) {
-            Log::warning('Empty webhook payload received', ['ip' => $request->ip()]);
+            Log::warning('Empty webhook payload', ['ip' => $request->ip()]);
             return response()->json(['success' => false, 'message' => 'Empty payload'], 400);
         }
 
@@ -43,11 +43,11 @@ class WebhookController extends Controller
         $timestamp = $request->header('x-webhook-timestamp');
 
         if (!$signature || !$timestamp) {
-            Log::warning('Missing webhook signature or timestamp', ['ip' => $request->ip()]);
+            Log::warning('Missing webhook signature/timestamp', ['ip' => $request->ip()]);
             return response()->json(['success' => false, 'message' => 'Missing headers'], 401);
         }
 
-        // Step 3: Verify signature (CORRECT IMPLEMENTATION: timestamp + payload)
+        // Step 3: Verify signature (timestamp + raw payload)
         if (!$this->verifySignature($payload, $signature, $timestamp)) {
             Log::warning('Invalid webhook signature', ['ip' => $request->ip()]);
             return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
@@ -72,7 +72,7 @@ class WebhookController extends Controller
         if ($eventId) {
             $idempotencyKey = 'webhook_processed_' . $eventId;
             if (Cache::has($idempotencyKey)) {
-                Log::info('Duplicate webhook event - skipping', ['event_id' => $eventId]);
+                Log::info('Duplicate webhook event – skipping', ['event_id' => $eventId]);
                 return response()->json(['success' => true, 'message' => 'Already processed']);
             }
         }
@@ -122,40 +122,13 @@ class WebhookController extends Controller
     }
 
     /**
-     * ============================================
-     * REFUND WEBHOOK HANDLER
-     * ============================================
-     */
-    public function handleRefund(Request $request)
-    {
-        $payload = $request->getContent();
-        $signature = $request->header('x-webhook-signature');
-        $timestamp = $request->header('x-webhook-timestamp');
-
-        if (!$this->verifySignature($payload, $signature, $timestamp)) {
-            Log::warning('Invalid refund webhook signature');
-            return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
-        }
-
-        $payloadData = json_decode($payload, true);
-        $eventType = $payloadData['type'] ?? null;
-
-        if ($eventType === 'REFUND_SUCCESS_WEBHOOK') {
-            return $this->handleRefundSuccess($payloadData);
-        }
-
-        return response()->json(['success' => true, 'message' => 'Event ignored']);
-    }
-
-    /**
-     * Handle successful payment - credit wallet (atomic)
+     * Handle successful payment – credit wallet (atomic)
      */
     protected function handlePaymentSuccess($payloadData)
     {
         $data = $payloadData['data'] ?? [];
         $orderId = $data['order']['order_id'] ?? null;
         $paymentId = $data['payment']['cf_payment_id'] ?? null;
-        $paymentStatus = $data['payment']['payment_status'] ?? null;
         $paymentAmount = (float) ($data['payment']['payment_amount'] ?? $data['payment']['order_amount'] ?? 0);
 
         Log::info('💰 Payment success webhook', [
@@ -177,10 +150,10 @@ class WebhookController extends Controller
             Log::error('Transaction not found for webhook', ['order_id' => $orderId]);
             $this->storeOrphanWebhook($payloadData, 'transaction_not_found');
             // Return 200 to stop Cashfree retries
-            return response()->json(['success' => true, 'message' => 'Transaction not found, but acknowledged']);
+            return response()->json(['success' => true, 'message' => 'Transaction not found, acknowledged']);
         }
 
-        // Idempotency check (already pending? if not pending, already processed)
+        // Idempotency check
         if ($transaction->status !== 'pending') {
             Log::info('Transaction already processed', ['order_id' => $orderId, 'status' => $transaction->status]);
             return response()->json(['success' => true, 'message' => 'Already processed']);
@@ -192,20 +165,18 @@ class WebhookController extends Controller
             return response()->json(['success' => false, 'message' => 'Invalid transaction type'], 400);
         }
 
-        // Amount match check (optional but recommended)
+        // Optional amount match check
         if (abs($paymentAmount - $transaction->amount) > 0.01) {
             Log::error('Amount mismatch', ['webhook' => $paymentAmount, 'db' => $transaction->amount]);
             $this->storeOrphanWebhook($payloadData, 'amount_mismatch');
-            return response()->json(['success' => true, 'message' => 'Amount mismatch, but acknowledged']);
+            return response()->json(['success' => true, 'message' => 'Amount mismatch, acknowledged']);
         }
 
-        // Double verification with Cashfree API (optional but secure)
+        // 🔧 FIX: Double verification – Cashfree API returns 'order_status' with value 'PAID'
         $verification = $this->verifyWithCashfreeAPI($orderId);
-        if (!$verification['success'] || ($verification['payment_status'] ?? '') !== 'SUCCESS') {
+        if (!$verification['success'] || ($verification['order_status'] ?? '') !== 'PAID') {
             Log::error('Double verification failed', ['order_id' => $orderId, 'verification' => $verification]);
             $this->storeFailedVerification($transaction, $verification);
-            // You may still credit the wallet if you trust the webhook signature.
-            // For strictness, we fail here.
             return response()->json(['success' => false, 'message' => 'Verification failed'], 500);
         }
 
@@ -337,8 +308,31 @@ class WebhookController extends Controller
     }
 
     /**
-     * Handle refund success
+     * ============================================
+     * REFUND WEBHOOK HANDLER
+     * ============================================
      */
+    public function handleRefund(Request $request)
+    {
+        $payload = $request->getContent();
+        $signature = $request->header('x-webhook-signature');
+        $timestamp = $request->header('x-webhook-timestamp');
+
+        if (!$this->verifySignature($payload, $signature, $timestamp)) {
+            Log::warning('Invalid refund webhook signature');
+            return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
+        }
+
+        $payloadData = json_decode($payload, true);
+        $eventType = $payloadData['type'] ?? null;
+
+        if ($eventType === 'REFUND_SUCCESS_WEBHOOK') {
+            return $this->handleRefundSuccess($payloadData);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Event ignored']);
+    }
+
     protected function handleRefundSuccess($payloadData)
     {
         $data = $payloadData['data'] ?? [];
@@ -376,17 +370,17 @@ class WebhookController extends Controller
     // ============================================
 
     /**
-     * Verify webhook signature using Cashfree client secret
-     * CORRECT IMPLEMENTATION: timestamp + raw payload
+     * Verify webhook signature using Cashfree client secret.
+     * Signature = base64(HMAC-SHA256(timestamp . raw payload, client_secret))
      */
     protected function verifySignature($payload, $signature, $timestamp): bool
     {
         if (!$signature || !$timestamp) {
-            Log::warning('Missing signature or timestamp');
             return false;
         }
 
-        $secret = config('cashfree.webhook_secret'); // This should be your payment client secret
+        // Use the same secret key that you use for creating orders (payment client secret)
+        $secret = config('cashfree.webhook_secret'); // Must be your payment client secret
 
         if (!$secret) {
             Log::error('Cashfree webhook secret not configured');
@@ -404,7 +398,7 @@ class WebhookController extends Controller
     }
 
     /**
-     * Double-verify order status with Cashfree API (optional but recommended)
+     * Double-verify order status with Cashfree API (returns order_status = PAID/ACTIVE/...)
      */
     protected function verifyWithCashfreeAPI(string $orderId): array
     {
