@@ -215,7 +215,6 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
         // Cashfree Payment Gateway Integration
         Route::post('/recharge/initiate', [WalletController::class, 'initiateRecharge']);
-        Route::get('/payment-status', [WalletController::class, 'checkPaymentStatus']);
     });
 
     // =============================================
@@ -329,6 +328,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         });
     });
 });
+
+Route::get('/wallet/payment-status', [WalletController::class, 'checkPaymentStatus']);
 
 // =============================================
 // 💳 CASHFREE WEBHOOKS (IP Whitelisted - No Auth)
