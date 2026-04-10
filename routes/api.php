@@ -208,8 +208,6 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         Route::get('/', [WalletController::class, 'balance']);
         Route::get('/transactions', [WalletController::class, 'transactions']);
         Route::get('/transactions/{id}', [WalletController::class, 'transactionDetails']);
-        Route::post('/add', [WalletController::class, 'addMoney']);
-        Route::post('/deduct', [WalletController::class, 'deductMoney']);
         Route::post('/transfer', [WalletController::class, 'transfer']);
         Route::get('/statement', [WalletController::class, 'statement']);
 
