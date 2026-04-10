@@ -247,50 +247,6 @@ class WebhookController extends Controller
         return response()->json(['success' => true]);
     }
 
-    // ==================== REFUND HANDLER (same as before) ====================
-    public function handleRefund(Request $request)
-    {
-        $payload = $request->getContent();
-        $signature = $request->header('x-webhook-signature');
-        $timestamp = $request->header('x-webhook-timestamp');
-        if (!$this->verifySignature($payload, $signature, $timestamp)) {
-            Log::warning('Invalid refund webhook signature');
-            return response()->json(['success' => false, 'message' => 'Invalid signature'], 401);
-        }
-
-        $payloadData = json_decode($payload, true);
-        $eventType = $payloadData['type'] ?? null;
-        if ($eventType === 'REFUND_SUCCESS_WEBHOOK') {
-            return $this->handleRefundSuccess($payloadData);
-        }
-        return response()->json(['success' => true]);
-    }
-
-    protected function handleRefundSuccess($payloadData)
-    {
-        $data = $payloadData['data'] ?? [];
-        $refundId = $data['refund']['cf_refund_id'] ?? null;
-        $orderId = $data['refund']['order_id'] ?? null;
-        $refundAmount = $data['refund']['refund_amount'] ?? 0;
-        Log::info('💰 Refund success', ['refund_id' => $refundId, 'order_id' => $orderId]);
-
-        if ($orderId) {
-            $originalTx = WalletTransaction::where('payment_order_id', $orderId)->orWhere('reference_id', $orderId)->first();
-            if ($originalTx) {
-                WalletTransaction::create([
-                    'user_id' => $originalTx->user_id,
-                    'amount' => -$refundAmount,
-                    'type' => 'debit',
-                    'reason' => 'Refund for order ' . $orderId,
-                    'status' => 'completed',
-                    'reference_id' => $refundId,
-                    'payment_details' => json_encode($payloadData),
-                ]);
-            }
-        }
-        return response()->json(['success' => true]);
-    }
-
     // ==================== SECURITY & HELPERS ====================
     protected function verifySignature($payload, $signature, $timestamp): bool
     {

@@ -340,9 +340,6 @@ Route::prefix('webhooks/cashfree')->group(function () {
     // Payment webhook - actual event (POST)
     Route::post('/payment', [WebhookController::class, 'handlePayment']);
 
-    // Refund webhook
-    Route::post('/refund', [WebhookController::class, 'handleRefund']);
-
     // Optional additional health check
     Route::get('/health', [WebhookController::class, 'healthCheck']);
 });
