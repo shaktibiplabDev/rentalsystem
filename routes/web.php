@@ -29,3 +29,7 @@ Route::post('/logout', function (Request $request) {
 
 Route::get('/email/verify/{token}', [EmailVerificationController::class, 'verifyToken'])
     ->name('verification.verify');
+
+Route::get('/wallet', function () {
+    return view('wallet');
+})->name('wallet');
