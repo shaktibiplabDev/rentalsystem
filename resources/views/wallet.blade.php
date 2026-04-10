@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Payment Status</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: #f5f7fb;
@@ -41,22 +37,9 @@
         .icon.success { background: #e6f7e6; color: #2e7d32; }
         .icon.error { background: #fee; color: #c62828; }
         .icon.pending { background: #fff3e0; color: #f57c00; }
-        h2 {
-            font-size: 24px;
-            margin-bottom: 12px;
-            color: #1e293b;
-        }
-        p {
-            color: #475569;
-            margin-bottom: 24px;
-            line-height: 1.5;
-        }
-        .amount {
-            font-size: 28px;
-            font-weight: bold;
-            color: #0f172a;
-            margin: 16px 0;
-        }
+        h2 { font-size: 24px; margin-bottom: 12px; color: #1e293b; }
+        p { color: #475569; margin-bottom: 24px; line-height: 1.5; }
+        .amount { font-size: 28px; font-weight: bold; color: #0f172a; margin: 16px 0; }
         .btn {
             background: #4f46e5;
             color: white;
@@ -69,11 +52,6 @@
             transition: opacity 0.2s;
         }
         .btn:hover { opacity: 0.9; }
-        .btn-close {
-            background: #e2e8f0;
-            color: #1e293b;
-            margin-top: 12px;
-        }
         .loader {
             border: 3px solid #e2e8f0;
             border-top: 3px solid #4f46e5;
@@ -83,10 +61,7 @@
             animation: spin 0.8s linear infinite;
             margin: 20px auto;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .hidden { display: none; }
     </style>
 </head>
@@ -103,27 +78,20 @@
     </div>
 
     <script>
-        // Helper: get URL params
+        // Helper: get URL parameters
         function getQueryParam(param) {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(param);
         }
 
-        // Helper: close WebView (works in Flutter WebView with custom scheme)
+        // Close WebView (custom scheme for Flutter)
         function closeWebView() {
-            // For Flutter WebView: use a custom scheme that the app intercepts
             window.location.href = 'yourapp://close';
-            // Fallback for browser: try to close window
             setTimeout(() => window.close(), 100);
         }
 
+        const orderId = getQueryParam('order_id');
         const paymentStatus = getQueryParam('payment_status');
-        let orderId = getQueryParam('order_id');
-
-        // If no order_id in URL, try to get it from sessionStorage (if stored during payment init)
-        if (!orderId) {
-            orderId = sessionStorage.getItem('last_order_id');
-        }
 
         const loadingDiv = document.getElementById('loading');
         const resultDiv = document.getElementById('result');
@@ -133,28 +101,23 @@
         const messageEl = document.getElementById('message');
         const closeBtn = document.getElementById('closeBtn');
 
-        closeBtn.addEventListener('click', () => {
-            closeWebView();
-        });
+        closeBtn.addEventListener('click', closeWebView);
 
-        // If no order_id, show generic message
         if (!orderId) {
             loadingDiv.classList.add('hidden');
             resultDiv.style.display = 'block';
             iconDiv.className = 'icon error';
             iconDiv.innerHTML = '⚠️';
-            titleEl.innerText = 'Payment Status Unknown';
-            messageEl.innerText = 'We could not verify your payment. Please check your transaction history.';
-            amountEl.innerText = '';
+            titleEl.innerText = 'Invalid Order';
+            messageEl.innerText = 'No order ID found. Please contact support.';
             return;
         }
 
-        // Call backend to get final status
-        const apiUrl = `https://rentos.versaero.top/api/wallet/payment-status?order_id=${encodeURIComponent(orderId)}`;
-        const authToken = sessionStorage.getItem('auth_token'); // optional, if your API requires token
+        // Call your backend API: /wallet/payment-status?order_id=...
+        const apiUrl = `https://rentos.versaero.top/wallet/payment-status?order_id=${encodeURIComponent(orderId)}`;
 
         fetch(apiUrl, {
-            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+            headers: { 'Accept': 'application/json' }
         })
         .then(res => res.json())
         .then(data => {
@@ -169,8 +132,8 @@
                 amountEl.innerText = `+ ₹${amount.toFixed(2)}`;
                 messageEl.innerText = `Your wallet has been recharged with ₹${amount.toFixed(2)}.`;
                 // Auto-close after 3 seconds
-                setTimeout(() => closeWebView(), 3000);
-            } 
+                setTimeout(closeWebView, 3000);
+            }
             else if (data.success && data.data.status === 'failed') {
                 iconDiv.className = 'icon error';
                 iconDiv.innerHTML = '✗';
@@ -178,22 +141,31 @@
                 messageEl.innerText = 'Your payment could not be processed. Please try again.';
                 amountEl.innerText = '';
             }
-            else {
+            else if (data.success && data.data.status === 'pending') {
                 iconDiv.className = 'icon pending';
                 iconDiv.innerHTML = '⏳';
                 titleEl.innerText = 'Processing';
                 messageEl.innerText = 'Your payment is being processed. You will receive a confirmation shortly.';
                 amountEl.innerText = '';
+                // Optional: poll again after a few seconds
+                setTimeout(() => location.reload(), 5000);
+            }
+            else {
+                iconDiv.className = 'icon error';
+                iconDiv.innerHTML = '⚠️';
+                titleEl.innerText = 'Verification Failed';
+                messageEl.innerText = 'Unable to verify payment status. Please check your wallet later.';
+                amountEl.innerText = '';
             }
         })
         .catch(err => {
-            console.error('Status check error', err);
+            console.error('API error:', err);
             loadingDiv.classList.add('hidden');
             resultDiv.style.display = 'block';
             iconDiv.className = 'icon error';
             iconDiv.innerHTML = '⚠️';
-            titleEl.innerText = 'Verification Failed';
-            messageEl.innerText = 'Unable to verify payment status. Please check your wallet balance later.';
+            titleEl.innerText = 'Network Error';
+            messageEl.innerText = 'Could not connect to server. Please check your wallet balance later.';
             amountEl.innerText = '';
         });
     </script>
