@@ -854,8 +854,9 @@ class WalletController extends Controller
                     'customer_name' => $user->name
                 ],
                 'order_meta' => [
-                    'return_url' => config('app.frontend_url') . '/wallet?payment_status=completed',
-                    'notify_url' => url('/api/webhooks/cashfree/payment')
+                    'return_url' => url('/wallet?payment_status=completed'),
+                    'notify_url' => url('/api/webhooks/cashfree/payment'),
+                    'if_required' => true
                 ]
             ];
 
