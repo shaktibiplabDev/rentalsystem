@@ -75,29 +75,25 @@ class WebhookController extends Controller
      */
     protected function verifySignature($payload, $signature, $timestamp): bool
     {
-        $secret = config('cashfree.webhook_secret'); // CLIENT SECRET
+        $secret = config('cashfree.webhook_secret');
 
-        if (! $secret) {
-            Log::error('Cashfree secret missing');
-            return false;
-        }
+        $signedPayload = $timestamp.$payload;
 
-        try {
-            // 🔥 CRITICAL: timestamp + payload
-            $signedPayload = $timestamp . $payload;
+        $expectedSignature = base64_encode(
+            hash_hmac('sha256', $signedPayload, $secret, true)
+        );
 
-            $expectedSignature = base64_encode(
-                hash_hmac('sha256', $signedPayload, $secret, true)
-            );
+        // 🧪 FULL DEBUG LOG
+        Log::info('CASHFREE DEBUG', [
+            'timestamp' => $timestamp,
+            'payload' => $payload,
+            'signed_payload' => $signedPayload,
+            'expected_signature' => $expectedSignature,
+            'received_signature' => $signature,
+            'match' => hash_equals($expectedSignature, $signature),
+        ]);
 
-            return hash_equals($expectedSignature, $signature);
-
-        } catch (\Exception $e) {
-            Log::error('Signature error', [
-                'error' => $e->getMessage()
-            ]);
-            return false;
-        }
+        return hash_equals($expectedSignature, $signature);
     }
 
     /**
@@ -120,6 +116,7 @@ class WebhookController extends Controller
 
         if (! $transaction) {
             Log::error('Transaction not found', ['order_id' => $orderId]);
+
             return response()->json(['error' => 'Transaction not found'], 404);
         }
 
@@ -146,7 +143,7 @@ class WebhookController extends Controller
             $transaction->status = 'completed';
             $transaction->payment_details = json_encode([
                 'payment_id' => $paymentId,
-                'webhook' => $payload
+                'webhook' => $payload,
             ]);
             $transaction->save();
 
@@ -154,7 +151,7 @@ class WebhookController extends Controller
 
             Log::info('Wallet credited', [
                 'user_id' => $user->id,
-                'amount' => $transaction->amount
+                'amount' => $transaction->amount,
             ]);
 
             return response()->json(['success' => true]);
@@ -163,7 +160,7 @@ class WebhookController extends Controller
             DB::rollBack();
 
             Log::error('Payment processing failed', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json(['error' => 'Processing failed'], 500);
