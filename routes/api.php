@@ -57,7 +57,7 @@ Route::get('/email/verify/token/{token}', [AuthController::class, 'verifyEmailWi
     ->name('api.verification.verify');
 
 // =============================================
-// 🔐 GOOGLE LOGIN ROUTES
+// 🔐 GOOGLE LOGIN ROUTES (Web OAuth Flow - KEPT ORIGINAL)
 // =============================================
 Route::prefix('auth/google')->group(function () {
     Route::get('/auth-url', [AuthController::class, 'getGoogleAuthUrl']);
@@ -72,6 +72,19 @@ Route::prefix('auth/google')->group(function () {
 });
 
 Route::post('/auth/google/complete-registration', [AuthController::class, 'completeGoogleRegistration']);
+
+// =============================================
+// 🆕 FLUTTER NATIVE GOOGLE SIGN-IN (NEW - ADDED WITHOUT BREAKING)
+// =============================================
+Route::prefix('auth/google')->group(function () {
+    // Primary method - uses ID token (RECOMMENDED for Flutter)
+    Route::post('/signin', [AuthController::class, 'googleSignIn'])
+        ->middleware('throttle:10,1'); // 10 attempts per minute
+    
+    // Fallback method - uses access token (for compatibility)
+    Route::post('/signin/access-token', [AuthController::class, 'googleSignInWithAccessToken'])
+        ->middleware('throttle:5,1'); // 5 attempts per minute
+});
 
 // =============================================
 // 🔒 PROTECTED ROUTES (Authentication Required)

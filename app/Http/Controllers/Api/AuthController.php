@@ -8,6 +8,7 @@ use App\Models\PasswordReset;
 use App\Models\User;
 use Carbon\Carbon;
 use Exception;
+use Google_Client;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -1261,7 +1262,7 @@ class AuthController extends Controller
     }
 
     // =============================================
-    // GOOGLE LOGIN METHODS
+    // GOOGLE LOGIN METHODS (Web Redirect Flow)
     // =============================================
 
     /**
@@ -1413,7 +1414,7 @@ class AuthController extends Controller
                     ],
                     'requires_phone' => true,
                 ],
-            ], 200); // 200 OK so the app can read the data
+            ], 200);
 
         } catch (Exception $e) {
             Log::error('Google callback error: '.$e->getMessage(), [
@@ -1687,6 +1688,363 @@ class AuthController extends Controller
     }
 
     // =============================================
+    // FLUTTER NATIVE GOOGLE SIGN-IN (HARDENED)
+    // =============================================
+
+    /**
+     * Google Sign-In for Flutter/Mobile Apps (HARDENED VERSION)
+     * Rate limited: 10 attempts per minute
+     */
+    public function googleSignIn(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'id_token' => 'required|string',
+                'device_name' => 'nullable|string|max:255',
+                'phone' => 'nullable|string|max:20|regex:/^[0-9]{10,15}$/',
+            ]);
+
+            // Step 1: Verify ID token with STRICT validation
+            $googleUser = $this->verifyGoogleIdTokenStrict($validated['id_token']);
+            
+            if (!$googleUser) {
+                Log::warning('Google token verification failed', [
+                    'ip' => $request->ip(),
+                    'has_token' => !empty($validated['id_token'])
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired Google token',
+                ], 401);
+            }
+
+            // Step 2: Process user (existing or new)
+            return $this->processGoogleUser($googleUser, $validated);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (Exception $e) {
+            Log::error('Google Sign-In error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Google authentication failed',
+                'error' => config('app.debug') ? $e->getMessage() : 'Please try again',
+            ], 500);
+        }
+    }
+
+    /**
+     * Fallback: Google Sign-In with Access Token (not recommended, but available)
+     * Rate limited: 5 attempts per minute
+     */
+    public function googleSignInWithAccessToken(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'access_token' => 'required|string',
+                'device_name' => 'nullable|string|max:255',
+                'phone' => 'nullable|string|max:20|regex:/^[0-9]{10,15}$/',
+            ]);
+
+            Log::info('Access token login attempted (fallback method)', [
+                'ip' => $request->ip()
+            ]);
+
+            // Fetch user info from Google using access token
+            $googleUser = $this->getGoogleUserFromAccessToken($validated['access_token']);
+            
+            if (!$googleUser) {
+                Log::warning('Invalid access token used', ['ip' => $request->ip()]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid access token',
+                ], 401);
+            }
+
+            return $this->processGoogleUser($googleUser, $validated);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (Exception $e) {
+            Log::error('Google Access Token error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Google authentication failed',
+            ], 500);
+        }
+    }
+
+    /**
+     * STRICT Google ID token verification
+     * Validates: audience, issuer, expiry, signature, email verification
+     */
+    private function verifyGoogleIdTokenStrict(string $idToken): ?array
+    {
+        try {
+            $client = new Google_Client([
+                'client_id' => config('services.google.client_id')
+            ]);
+            
+            // This method performs ALL required validations:
+            // - Signature verification using Google's public keys
+            // - Audience (aud) matches our client ID
+            // - Issuer (iss) is accounts.google.com
+            // - Expiration (exp) is not passed
+            $payload = $client->verifyIdToken($idToken);
+            
+            if (!$payload) {
+                Log::error('ID token verification failed - invalid signature or payload');
+                return null;
+            }
+            
+            // STRICT: Additional manual validations
+            // 1. Verify email is verified by Google
+            if (empty($payload['email_verified']) || $payload['email_verified'] !== true) {
+                Log::warning('Google account email not verified', [
+                    'email' => $payload['email'] ?? 'unknown'
+                ]);
+                return null;
+            }
+            
+            // 2. Verify issuer exactly matches Google
+            $allowedIssuers = ['accounts.google.com', 'https://accounts.google.com'];
+            if (!in_array($payload['iss'], $allowedIssuers)) {
+                Log::warning('Invalid token issuer', ['iss' => $payload['iss']]);
+                return null;
+            }
+            
+            // 3. Double-check audience (already verified by verifyIdToken but extra safety)
+            if ($payload['aud'] !== config('services.google.client_id')) {
+                Log::warning('Token audience mismatch', [
+                    'expected' => config('services.google.client_id'),
+                    'got' => $payload['aud']
+                ]);
+                return null;
+            }
+            
+            // 4. Verify token not expired (redundant but explicit)
+            if (isset($payload['exp']) && $payload['exp'] < time()) {
+                Log::warning('Expired token received', ['exp' => $payload['exp']]);
+                return null;
+            }
+            
+            // Normalized response structure
+            return [
+                'google_id' => $payload['sub'],          // Standard field name
+                'email' => $payload['email'],
+                'name' => $payload['name'] ?? null,
+                'picture' => $payload['picture'] ?? null,
+                'email_verified' => true,
+                'locale' => $payload['locale'] ?? null,
+            ];
+            
+        } catch (Exception $e) {
+            Log::error('Google token verification exception', [
+                'error' => $e->getMessage(),
+                'code' => $e->getCode()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Get Google user info from access token (fallback only)
+     */
+    private function getGoogleUserFromAccessToken(string $accessToken): ?array
+    {
+        try {
+            $client = new \GuzzleHttp\Client(['timeout' => 10]);
+            $response = $client->get('https://www.googleapis.com/oauth2/v3/userinfo', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken,
+                ],
+            ]);
+
+            $userData = json_decode($response->getBody(), true);
+            
+            if (!$userData || empty($userData['sub'])) {
+                return null;
+            }
+            
+            // Normalize to same structure as ID token
+            return [
+                'google_id' => $userData['sub'],
+                'email' => $userData['email'],
+                'name' => $userData['name'] ?? null,
+                'picture' => $userData['picture'] ?? null,
+                'email_verified' => $userData['email_verified'] ?? false,
+                'locale' => $userData['locale'] ?? null,
+            ];
+            
+        } catch (Exception $e) {
+            Log::error('Failed to fetch Google user info', [
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * UNIFIED logic path for processing Google users
+     * Handles: existing users, account linking, new user creation
+     */
+    private function processGoogleUser(array $googleUser, array $requestData)
+    {
+        DB::beginTransaction();
+        
+        try {
+            // Check if user exists by email
+            $existingUser = User::where('email', $googleUser['email'])->first();
+            
+            // CASE 1: User exists by email
+            if ($existingUser) {
+                // Edge case: Email exists but google_id is null - LINK account
+                if (empty($existingUser->google_id)) {
+                    $existingUser->update([
+                        'google_id' => $googleUser['google_id'],
+                        'avatar' => $googleUser['picture'] ?? $existingUser->avatar,
+                        'is_google_user' => true,
+                        'google_verified_at' => now(),
+                    ]);
+                    
+                    Log::info('Google account linked to existing user', [
+                        'user_id' => $existingUser->id,
+                        'email' => $existingUser->email,
+                    ]);
+                }
+                
+                // Auto-verify email if not already (Google verified it)
+                if (!$existingUser->hasVerifiedEmail() && $googleUser['email_verified']) {
+                    $existingUser->markEmailAsVerified();
+                }
+                
+                DB::commit();
+                
+                // Generate device-specific token
+                $deviceName = $requestData['device_name'] ?? 'google_auth_' . Str::random(8);
+                $token = $existingUser->createToken($deviceName)->plainTextToken;
+                
+                Log::info('Google login successful', [
+                    'user_id' => $existingUser->id,
+                    'is_new' => false,
+                    'linked' => true
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Login successful',
+                    'data' => [
+                        'user' => $this->formatUserData($existingUser),
+                        'token' => $token,
+                        'token_expires_in' => 30,
+                        'is_new_user' => false,
+                        'needs_password_setup' => $existingUser->needsPasswordSetup(),
+                    ],
+                ]);
+            }
+            
+            // CASE 2: New user - check if phone provided
+            if (empty($requestData['phone'])) {
+                DB::rollBack();
+                
+                // Return Google data to collect phone number
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phone number required to complete registration',
+                    'data' => [
+                        'google_data' => [
+                            'google_id' => $googleUser['google_id'],
+                            'name' => $googleUser['name'],
+                            'email' => $googleUser['email'],
+                            'avatar' => $googleUser['picture'],
+                        ],
+                        'requires_phone' => true,
+                    ],
+                ], 200);
+            }
+            
+            // Verify phone not already used
+            $phoneUser = User::where('phone', $requestData['phone'])->first();
+            if ($phoneUser) {
+                DB::rollBack();
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phone number already registered',
+                    'errors' => ['phone' => ['This phone number is already in use.']],
+                ], 422);
+            }
+            
+            // CASE 3: Create NEW user with phone
+            $user = User::create([
+                'name' => $googleUser['name'],
+                'email' => $googleUser['email'],
+                'phone' => $requestData['phone'],
+                'google_id' => $googleUser['google_id'],
+                'avatar' => $googleUser['picture'] ?? null,
+                'is_google_user' => true,
+                'email_verified_at' => $googleUser['email_verified'] ? now() : null,
+                'google_verified_at' => now(),
+                'wallet_balance' => 0,
+                'role' => 'user',
+                'password' => null,
+                'password_set_required' => true,
+            ]);
+            
+            DB::commit();
+            
+            // Generate device-specific token
+            $deviceName = $requestData['device_name'] ?? 'google_auth_' . Str::random(8);
+            $token = $user->createToken($deviceName)->plainTextToken;
+            
+            Log::info('New user registered via Google', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Registration completed successfully',
+                'data' => [
+                    'user' => $this->formatUserData($user),
+                    'token' => $token,
+                    'token_expires_in' => 30,
+                    'is_new_user' => true,
+                    'needs_password_setup' => true,
+                ],
+            ]);
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Google user processing failed', [
+                'error' => $e->getMessage(),
+                'email' => $googleUser['email'] ?? 'unknown',
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to process Google user',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    // =============================================
     // PRIVATE HELPER METHODS
     // =============================================
 
@@ -1715,7 +2073,7 @@ class AuthController extends Controller
             ]
         );
 
-        $verificationLink = route('verification.verify', ['token' => $token]); // adjust to your frontend URL if needed
+        $verificationLink = route('verification.verify', ['token' => $token]);
 
         $subject = 'Verify Your Email - Vehicle Rental System';
         $htmlContent = "
@@ -1872,6 +2230,7 @@ class AuthController extends Controller
             'wallet_balance' => (float) $user->wallet_balance,
             'email_verified' => $user->hasVerifiedEmail(),
             'is_google_user' => (bool) $user->is_google_user,
+            'has_google_linked' => !empty($user->google_id),
             'has_password' => $user->hasPassword(),
             'needs_password_setup' => $user->needsPasswordSetup(),
             'created_at' => $user->created_at,
