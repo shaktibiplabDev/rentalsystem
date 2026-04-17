@@ -737,7 +737,7 @@ class CustomerController extends Controller
                     'license_number' => $this->maskLicenseNumber($customer->license_number),
                     'license_valid_from' => $customer->license_valid_from_non_transport,
                     'license_valid_to' => $customer->license_valid_to_non_transport,
-                    'license_photo' => $customer->license_photo ? asset('storage/' . $customer->license_photo) : null,
+                    'license_photo' => $customer->license_photo_url,
                     'license_data_exists' => true,
                     'license_is_valid' => $isLicenseValid
                 ], 200);
@@ -1017,7 +1017,7 @@ class CustomerController extends Controller
                 'aadhaar_number' => $this->maskAadhaar($customer->aadhaar_number),
                 'date_of_birth' => $customer->date_of_birth,
                 'blood_group' => $customer->blood_group,
-                'license_photo' => $customer->license_photo ? asset('storage/' . $customer->license_photo) : null,
+                'license_photo' => $customer->license_photo_url,
                 'license_valid_from' => $customer->license_valid_from_non_transport,
                 'license_valid_to' => $customer->license_valid_to_non_transport,
                 'license_is_valid' => $customer->license_valid_to_non_transport 
@@ -1205,7 +1205,7 @@ class CustomerController extends Controller
                 'address_list' => json_decode($customer->license_address_list, true) ?? [],
                 'vehicle_classes' => json_decode($customer->vehicle_classes_data, true) ?? [],
                 'reference_id' => $customer->license_reference_id,
-                'photo_url' => $customer->license_photo ? asset('storage/' . $customer->license_photo) : null,
+                'photo_url' => $customer->license_photo_url,
                 'raw_data' => $licenseData
             ];
         } catch (Exception $e) {

@@ -115,7 +115,7 @@ class RentalController extends Controller
                     'valid_to' => $existingCustomer->license_valid_to_non_transport,
                     'vehicle_classes' => $vehicleClasses,
                     'address_list' => $addressList,
-                    'photo_url' => $existingCustomer->license_photo ? asset('storage/'.$existingCustomer->license_photo) : null,
+                    'photo_url' => $existingCustomer->license_photo_url,
                     'reference_id' => $existingCustomer->license_reference_id,
                     'from_cache' => true,
                     'raw_response' => $licenseData,
@@ -288,7 +288,7 @@ class RentalController extends Controller
                             'license_issue_date' => $customer->license_issue_date,
                             'dob' => $customer->date_of_birth,
                             'address' => $customer->address,
-                            'customer_photo_url' => $customer->license_photo ? asset('storage/'.$customer->license_photo) : null,
+                            'customer_photo_url' => $customer->license_photo_url,
                             'license_validity' => [
                                 'valid_from' => $customer->license_valid_from_non_transport,
                                 'valid_to' => $customer->license_valid_to_non_transport,

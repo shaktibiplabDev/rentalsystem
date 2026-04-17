@@ -554,7 +554,7 @@ class Customer extends Model
     public function getLicensePhotoUrlAttribute(): ?string
     {
         if ($this->license_photo && \Storage::disk('public')->exists($this->license_photo)) {
-            return asset('storage/' . $this->license_photo);
+            return url('/media/' . ltrim($this->license_photo, '/'));
         }
         
         return null;

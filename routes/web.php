@@ -17,6 +17,7 @@ Route::get('/admin', [DashboardController::class, 'index']);
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 Route::post('/logout', function (Request $request) {
     Auth::logout();
@@ -33,3 +34,21 @@ Route::get('/email/verify/{token}', [EmailVerificationController::class, 'verify
 Route::get('/wallet', function () {
     return view('wallet');
 })->name('wallet');
+
+Route::get('/media/{path}', function (string $path) {
+    $path = ltrim($path, '/');
+
+    // Prevent path traversal attempts.
+    if (str_contains($path, '..')) {
+        abort(404);
+    }
+
+    // Serve only files that exist on the public disk.
+    if (! Storage::disk('public')->exists($path)) {
+        abort(404);
+    }
+
+    return response()->file(Storage::disk('public')->path($path), [
+        'Cache-Control' => 'public, max-age=86400',
+    ]);
+})->where('path', '.*')->name('media.public');
