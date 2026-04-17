@@ -172,6 +172,10 @@ class CustomerController extends Controller
                 ->with(['vehicle', 'documents'])
                 ->orderBy('created_at', 'desc')
                 ->paginate(10);
+
+            $rentals->getCollection()->transform(function ($rental) {
+                return $this->formatRentalWithFileUrls($rental);
+            });
             
             $formattedCustomer['rentals'] = $rentals;
             
@@ -560,6 +564,10 @@ class CustomerController extends Controller
                 ->with(['vehicle', 'documents'])
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage);
+
+            $rentals->getCollection()->transform(function ($rental) {
+                return $this->formatRentalWithFileUrls($rental);
+            });
             
             return response()->json([
                 'success' => true,
@@ -1371,5 +1379,59 @@ class CustomerController extends Controller
         
         // Add UTF-8 BOM for Excel compatibility
         return "\xEF\xBB\xBF" . $csv;
+    }
+
+    protected function buildPublicFileUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        return url('/media/' . ltrim($path, '/'));
+    }
+
+    protected function parseDamageImages($damageImages): array
+    {
+        if (is_array($damageImages)) {
+            return $damageImages;
+        }
+
+        if (! is_string($damageImages) || trim($damageImages) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($damageImages, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    protected function formatRentalWithFileUrls($rental): array
+    {
+        $data = $rental->toArray();
+
+        $data['agreement_path'] = $this->buildPublicFileUrl($rental->agreement_path ?? null);
+        $data['signed_agreement_path'] = $this->buildPublicFileUrl($rental->signed_agreement_path ?? null);
+        $data['customer_with_vehicle_image'] = $this->buildPublicFileUrl($rental->customer_with_vehicle_image ?? null);
+        $data['vehicle_condition_video'] = $this->buildPublicFileUrl($rental->vehicle_condition_video ?? null);
+        $data['receipt_path'] = $this->buildPublicFileUrl($rental->receipt_path ?? null);
+        $data['damage_images'] = array_map(
+            fn ($path) => $this->buildPublicFileUrl($path),
+            $this->parseDamageImages($rental->damage_images ?? null)
+        );
+
+        if (isset($data['documents']) && is_array($data['documents'])) {
+            $data['documents'] = array_map(function ($document) {
+                if (! is_array($document)) {
+                    return $document;
+                }
+
+                $document['aadhaar_image'] = $this->buildPublicFileUrl($document['aadhaar_image'] ?? null);
+                $document['license_image'] = $this->buildPublicFileUrl($document['license_image'] ?? null);
+
+                return $document;
+            }, $data['documents']);
+        }
+
+        return $data;
     }
 }

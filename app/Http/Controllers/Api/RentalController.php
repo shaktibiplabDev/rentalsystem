@@ -73,7 +73,7 @@ class RentalController extends Controller
                 return response()->json(['success' => false, 'message' => 'Verification fee configuration missing'], 500);
             }
 
-            $user = User::where('id', $shopOwner->id)->lockForUpdate()->first();
+            $user = User::where('id', $shopOwner->id)->first();
             if (! $user) {
                 return response()->json(['success' => false, 'message' => 'User not found'], 404);
             }
@@ -193,6 +193,18 @@ class RentalController extends Controller
                 $dlVerification, $isFromCache, $existingCustomer, $customerData,
                 $referenceId, $dlNumber, $licenseHash
             ) {
+                $lockedUser = User::where('id', $user->id)->lockForUpdate()->first();
+                if (! $lockedUser) {
+                    throw new Exception('User not found for wallet deduction');
+                }
+                if ((float) $lockedUser->wallet_balance < $verificationPrice) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Insufficient wallet balance',
+                        'errors' => ['wallet' => ['Need ₹'.number_format($verificationPrice, 2).'. Current: ₹'.number_format((float) $lockedUser->wallet_balance, 2)]],
+                    ], 402);
+                }
+
                 $customer = Customer::updateOrCreate(
                     ['license_number_hash' => $licenseHash],
                     [
@@ -215,17 +227,20 @@ class RentalController extends Controller
                     ]
                 );
 
-                $updated = User::where('id', $user->id)
+                $balanceBeforeDeduction = (float) $lockedUser->wallet_balance;
+
+                $updated = User::where('id', $lockedUser->id)
                     ->where('wallet_balance', '>=', $verificationPrice)
-                    ->update(['wallet_balance' => DB::raw('wallet_balance - '.$verificationPrice)]);
+                    ->decrement('wallet_balance', $verificationPrice);
                 if (! $updated) {
                     throw new Exception('Failed to deduct verification fee');
                 }
-                $user->refresh();
-                Cache::forget('wallet_balance_'.$user->id);
+                $lockedUser->refresh();
+                $balanceAfterDeduction = (float) $lockedUser->wallet_balance;
+                Cache::forget('wallet_balance_'.$lockedUser->id);
 
                 $transaction = WalletTransaction::create([
-                    'user_id' => $user->id,
+                    'user_id' => $lockedUser->id,
                     'amount' => $verificationPrice,
                     'type' => 'debit',
                     'reason' => 'DL verification '.($isFromCache ? '(CACHED)' : '(FRESH)').' - DL: '.$dlNumber,
@@ -235,6 +250,8 @@ class RentalController extends Controller
                         'is_cached' => $isFromCache,
                         'dl_number' => $dlNumber,
                         'customer_id' => $customer->id,
+                        'balance_before' => $balanceBeforeDeduction,
+                        'balance_after' => $balanceAfterDeduction,
                     ]),
                 ]);
 
@@ -278,7 +295,7 @@ class RentalController extends Controller
                         'rental_id' => $rental->id,
                         'verification_source' => $isFromCache ? 'cached' : 'fresh',
                         'verification_fee' => $verificationPrice,
-                        'wallet_balance' => (float) $user->wallet_balance,
+                        'wallet_balance' => $balanceAfterDeduction,
                         'transaction_id' => $transaction->id,
                         'customer' => [
                             'id' => $customer->id,
@@ -413,11 +430,11 @@ class RentalController extends Controller
                     'message' => 'Documents uploaded successfully. Please proceed to agreement signing.',
                     'data' => [
                         'rental_id' => $rental->id,
-                        'agreement_path' => $agreementPath ? asset('storage/'.$agreementPath) : null,
+                        'agreement_path' => $this->buildPublicFileUrl($agreementPath),
                         'document' => [
                             'id' => $document->id,
-                            'license_image' => $document->license_image ? asset('storage/'.$document->license_image) : null,
-                            'aadhaar_image' => $document->aadhaar_image ? asset('storage/'.$document->aadhaar_image) : null,
+                            'license_image' => $this->buildPublicFileUrl($document->license_image),
+                            'aadhaar_image' => $this->buildPublicFileUrl($document->aadhaar_image),
                         ],
                         'next_phase' => 'agreement_signing',
                     ],
@@ -524,9 +541,9 @@ class RentalController extends Controller
                         'rental_id' => $rental->id,
                         'start_time' => $rental->start_time,
                         'status' => 'active',
-                        'signed_agreement_url' => $signedAgreementPath ? asset('storage/'.$signedAgreementPath) : null,
-                        'customer_photo_url' => $customerWithVehiclePath ? asset('storage/'.$customerWithVehiclePath) : null,
-                        'condition_video_url' => $vehicleConditionVideoPath ? asset('storage/'.$vehicleConditionVideoPath) : null,
+                        'signed_agreement_url' => $this->buildPublicFileUrl($signedAgreementPath),
+                        'customer_photo_url' => $this->buildPublicFileUrl($customerWithVehiclePath),
+                        'condition_video_url' => $this->buildPublicFileUrl($vehicleConditionVideoPath),
                         'vehicle' => [
                             'id' => $vehicle->id,
                             'name' => $vehicle->name,
@@ -695,9 +712,9 @@ class RentalController extends Controller
                         ],
                         'damage_info' => $damageAmount > 0 ? [
                             'description' => $rental->damage_description,
-                            'images' => array_map(fn ($p) => asset('storage/'.$p), $damageImages),
+                            'images' => array_map(fn ($p) => $this->buildPublicFileUrl($p), $damageImages),
                         ] : null,
-                        'receipt_path' => $receiptPath ? asset('storage/'.$receiptPath) : null,
+                        'receipt_path' => $this->buildPublicFileUrl($receiptPath),
                         'vehicle' => [
                             'id' => $vehicle->id,
                             'name' => $vehicle->name,
@@ -797,7 +814,9 @@ class RentalController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            return response()->json(['success' => true, 'data' => $rentals, 'total' => $rentals->count()], 200);
+            $formattedRentals = $rentals->map(fn ($rental) => $this->formatRentalResponse($rental));
+
+            return response()->json(['success' => true, 'data' => $formattedRentals, 'total' => $formattedRentals->count()], 200);
         } catch (Exception $e) {
             return response()->json(['success' => false, 'message' => 'Failed to fetch active rentals'], 500);
         }
@@ -816,6 +835,8 @@ class RentalController extends Controller
                 ->with(['vehicle', 'customer'])
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage);
+
+            $rentals->getCollection()->transform(fn ($rental) => $this->formatRentalResponse($rental));
 
             return response()->json([
                 'success' => true,
@@ -847,7 +868,7 @@ class RentalController extends Controller
                 return response()->json(['success' => false, 'message' => 'Rental not found'], 404);
             }
 
-            return response()->json(['success' => true, 'data' => $rental], 200);
+            return response()->json(['success' => true, 'data' => $this->formatRentalResponse($rental)], 200);
         } catch (Exception $e) {
             return response()->json(['success' => false, 'message' => 'Failed to fetch rental'], 500);
         }
@@ -1210,23 +1231,23 @@ class RentalController extends Controller
         ];
 
         if ($rental->document) {
-            $phaseStatus['phases']['document_upload']['license_image'] = $rental->document->license_image ? asset('storage/'.$rental->document->license_image) : null;
-            $phaseStatus['phases']['document_upload']['aadhaar_image'] = $rental->document->aadhaar_image ? asset('storage/'.$rental->document->aadhaar_image) : null;
+            $phaseStatus['phases']['document_upload']['license_image'] = $this->buildPublicFileUrl($rental->document->license_image);
+            $phaseStatus['phases']['document_upload']['aadhaar_image'] = $this->buildPublicFileUrl($rental->document->aadhaar_image);
         }
         if ($rental->agreement_path) {
-            $phaseStatus['phases']['agreement_signing']['agreement_url'] = asset('storage/'.$rental->agreement_path);
+            $phaseStatus['phases']['agreement_signing']['agreement_url'] = $this->buildPublicFileUrl($rental->agreement_path);
         }
         if ($rental->signed_agreement_path) {
-            $phaseStatus['phases']['agreement_signing']['signed_agreement_url'] = asset('storage/'.$rental->signed_agreement_path);
+            $phaseStatus['phases']['agreement_signing']['signed_agreement_url'] = $this->buildPublicFileUrl($rental->signed_agreement_path);
         }
         if ($rental->customer_with_vehicle_image) {
-            $phaseStatus['phases']['agreement_signing']['customer_photo_url'] = asset('storage/'.$rental->customer_with_vehicle_image);
+            $phaseStatus['phases']['agreement_signing']['customer_photo_url'] = $this->buildPublicFileUrl($rental->customer_with_vehicle_image);
         }
         if ($rental->vehicle_condition_video) {
-            $phaseStatus['phases']['agreement_signing']['condition_video_url'] = asset('storage/'.$rental->vehicle_condition_video);
+            $phaseStatus['phases']['agreement_signing']['condition_video_url'] = $this->buildPublicFileUrl($rental->vehicle_condition_video);
         }
         if ($rental->receipt_path) {
-            $phaseStatus['phases']['completed']['receipt_url'] = asset('storage/'.$rental->receipt_path);
+            $phaseStatus['phases']['completed']['receipt_url'] = $this->buildPublicFileUrl($rental->receipt_path);
         }
 
         return $phaseStatus;
@@ -1266,6 +1287,60 @@ class RentalController extends Controller
         } catch (Exception $e) {
             Log::error('Failed to log rental end', ['error' => $e->getMessage()]);
         }
+    }
+
+    protected function buildPublicFileUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        return url('/media/'.ltrim($path, '/'));
+    }
+
+    protected function parseDamageImages($damageImages): array
+    {
+        if (is_array($damageImages)) {
+            return $damageImages;
+        }
+
+        if (! is_string($damageImages) || trim($damageImages) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($damageImages, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    protected function formatRentalResponse(Rental $rental): array
+    {
+        $data = $rental->toArray();
+
+        $data['agreement_path'] = $this->buildPublicFileUrl($rental->agreement_path);
+        $data['signed_agreement_path'] = $this->buildPublicFileUrl($rental->signed_agreement_path);
+        $data['customer_with_vehicle_image'] = $this->buildPublicFileUrl($rental->customer_with_vehicle_image);
+        $data['vehicle_condition_video'] = $this->buildPublicFileUrl($rental->vehicle_condition_video);
+        $data['receipt_path'] = $this->buildPublicFileUrl($rental->receipt_path);
+
+        $damageImages = $this->parseDamageImages($rental->damage_images);
+        $data['damage_images'] = array_map(fn ($path) => $this->buildPublicFileUrl($path), $damageImages);
+
+        if ($rental->relationLoaded('customer') && $rental->customer) {
+            $customerData = $rental->customer->toArray();
+            $customerData['license_photo'] = $rental->customer->license_photo_url;
+            $customerData['license_photo_url'] = $rental->customer->license_photo_url;
+            $data['customer'] = $customerData;
+        }
+
+        if ($rental->relationLoaded('document') && $rental->document) {
+            $documentData = $rental->document->toArray();
+            $documentData['aadhaar_image'] = $this->buildPublicFileUrl($rental->document->aadhaar_image);
+            $documentData['license_image'] = $this->buildPublicFileUrl($rental->document->license_image);
+            $data['document'] = $documentData;
+        }
+
+        return $data;
     }
 
     private function getUserAverageRentalDuration($userId): ?float

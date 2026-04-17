@@ -63,9 +63,9 @@ class DocumentController extends Controller
                                         'phone' => $document->rental->customer->phone ?? 'N/A',
                                         'address' => $document->rental->customer->address ?? 'N/A',
                                     ],
-                                    'aadhaar_image' => $document->aadhaar_image,
+                                    'aadhaar_image' => $this->buildPublicFileUrl($document->aadhaar_image),
                                     'has_aadhaar' => ! is_null($document->aadhaar_image),
-                                    'license_image' => $document->license_image,
+                                    'license_image' => $this->buildPublicFileUrl($document->license_image),
                                     'is_verified' => (bool) $document->is_verified,
                                     'verification_status' => $document->verification_status,
                                     'verified_at' => $document->verified_at,
@@ -110,9 +110,9 @@ class DocumentController extends Controller
                                         'number_plate' => $document->rental->vehicle->number_plate ?? 'N/A',
                                         'type' => $document->rental->vehicle->type ?? 'N/A',
                                     ],
-                                    'aadhaar_image' => $document->aadhaar_image,
+                                    'aadhaar_image' => $this->buildPublicFileUrl($document->aadhaar_image),
                                     'has_aadhaar' => ! is_null($document->aadhaar_image),
-                                    'license_image' => $document->license_image,
+                                    'license_image' => $this->buildPublicFileUrl($document->license_image),
                                     'is_verified' => (bool) $document->is_verified,
                                     'verification_status' => $document->verification_status,
                                     'verified_at' => $document->verified_at,
@@ -241,9 +241,9 @@ class DocumentController extends Controller
             $responseData = [
                 'id' => $document->id,
                 'rental_id' => $document->rental_id,
-                'aadhaar_image' => $document->aadhaar_image,
+                'aadhaar_image' => $this->buildPublicFileUrl($document->aadhaar_image),
                 'has_aadhaar' => ! is_null($document->aadhaar_image),
-                'license_image' => $document->license_image,
+                'license_image' => $this->buildPublicFileUrl($document->license_image),
                 'is_verified' => (bool) $document->is_verified,
                 'verification_status' => $document->verification_status,
                 'verified_at' => $document->verified_at,
@@ -1018,5 +1018,14 @@ class DocumentController extends Controller
         });
 
         return round($totalMinutes / $verifiedDocs->count(), 2);
+    }
+
+    protected function buildPublicFileUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        return url('/media/'.ltrim($path, '/'));
     }
 }
