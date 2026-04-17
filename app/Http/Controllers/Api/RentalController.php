@@ -16,6 +16,7 @@ use App\Traits\LogsCustomerAccess;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -221,6 +222,7 @@ class RentalController extends Controller
                     throw new Exception('Failed to deduct verification fee');
                 }
                 $user->refresh();
+                Cache::forget('wallet_balance_'.$user->id);
 
                 $transaction = WalletTransaction::create([
                     'user_id' => $user->id,
@@ -283,6 +285,14 @@ class RentalController extends Controller
                             'name' => $customer->name,
                             'phone' => $customer->phone,
                             'license_number' => $customer->license_number,
+                            'license_issue_date' => $customer->license_issue_date,
+                            'dob' => $customer->date_of_birth,
+                            'address' => $customer->address,
+                            'customer_photo_url' => $customer->license_photo ? asset('storage/'.$customer->license_photo) : null,
+                            'license_validity' => [
+                                'valid_from' => $customer->license_valid_from_non_transport,
+                                'valid_to' => $customer->license_valid_to_non_transport,
+                            ],
                         ],
                         'vehicle' => [
                             'id' => $vehicle->id,

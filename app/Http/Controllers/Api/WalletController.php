@@ -50,7 +50,7 @@ class WalletController extends Controller
     }
 
     /**
-     * Get current wallet balance with caching
+     * Get current wallet balance directly from DB for financial consistency
      */
     public function balance()
     {
@@ -68,11 +68,7 @@ class WalletController extends Controller
                 ], 401);
             }
 
-            // Get from cache to reduce database load
-            $cacheKey = 'wallet_balance_'.$user->id;
-            $balance = Cache::remember($cacheKey, now()->addMinutes($this->cacheDuration), function () use ($user) {
-                return (float) $user->wallet_balance;
-            });
+            $balance = $this->getCurrentWalletBalance($user->id);
 
             return response()->json([
                 'success' => true,
@@ -188,7 +184,7 @@ class WalletController extends Controller
                 $stats = [
                     'total_credits' => $totalCredits,
                     'total_debits' => $totalDebits,
-                    'current_balance' => (float) $user->wallet_balance,
+                    'current_balance' => $this->getCurrentWalletBalance($user->id),
                     'transaction_count' => $transactions->total(),
                     'pending_transactions' => $pendingTransactions,
                     'failed_transactions' => $failedTransactions,
@@ -534,9 +530,10 @@ class WalletController extends Controller
             ]);
 
             $amount = (float) $validated['amount'];
+            $currentBalance = $this->getCurrentWalletBalance($user->id);
 
             // Check wallet limit
-            if ($user->wallet_balance + $amount > $this->maxWalletBalance) {
+            if ($currentBalance + $amount > $this->maxWalletBalance) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Amount exceeds maximum wallet limit',
@@ -700,28 +697,34 @@ class WalletController extends Controller
                     $paymentStatus = $orderStatus['order_status'];
 
                     if ($paymentStatus === 'PAID') {
-                        // Process successful payment
+                        // Process successful payment with row-lock idempotency.
+                        $paymentProcessed = false;
                         DB::beginTransaction();
                         try {
-                            // Atomic wallet update
-                            $updated = User::where('id', $transaction->user_id)
-                                ->where(DB::raw('wallet_balance + '.$transaction->amount), '<=', $this->maxWalletBalance)
-                                ->update(['wallet_balance' => DB::raw('wallet_balance + '.$transaction->amount)]);
+                            $lockedTransaction = WalletTransaction::where('id', $transaction->id)
+                                ->lockForUpdate()
+                                ->first();
 
-                            if (! $updated) {
-                                throw new Exception('Failed to update wallet balance');
+                            if ($lockedTransaction && $lockedTransaction->status === 'pending') {
+                                $walletUpdated = User::where('id', $lockedTransaction->user_id)
+                                    ->where(DB::raw('wallet_balance + '.$lockedTransaction->amount), '<=', $this->maxWalletBalance)
+                                    ->update(['wallet_balance' => DB::raw('wallet_balance + '.$lockedTransaction->amount)]);
+
+                                if (! $walletUpdated) {
+                                    throw new Exception('Failed to update wallet balance');
+                                }
+
+                                $lockedTransaction->status = 'completed';
+                                $lockedTransaction->payment_details = $orderStatus;
+                                $lockedTransaction->save();
+                                $paymentProcessed = true;
                             }
 
-                            $transaction->status = 'completed';
-                            $transaction->payment_details = json_encode($orderStatus);
-                            $transaction->save();
-
                             DB::commit();
+                            $transaction->refresh();
+                            $this->invalidateWalletBalanceCache($transaction->user_id);
 
-                            Cache::forget('wallet_balance_'.$transaction->user_id);
-
-                            // Send notification (if user exists)
-                            if ($transaction->user_id) {
+                            if ($paymentProcessed && $transaction->user_id) {
                                 $this->sendNotification($transaction->user_id, [
                                     'title' => 'Wallet Recharged Successfully',
                                     'message' => '₹'.number_format($transaction->amount, 2).' has been added to your wallet.',
@@ -730,10 +733,11 @@ class WalletController extends Controller
                                 ]);
                             }
 
-                            Log::info('Payment completed via status check', [
+                            Log::info('Payment status processed', [
                                 'user_id' => $transaction->user_id,
                                 'transaction_id' => $transaction->id,
                                 'amount' => $transaction->amount,
+                                'processed' => $paymentProcessed,
                             ]);
                         } catch (Exception $e) {
                             DB::rollBack();
@@ -744,7 +748,7 @@ class WalletController extends Controller
                         }
                     } elseif (in_array($paymentStatus, ['FAILED', 'CANCELLED', 'EXPIRED'])) {
                         $transaction->status = 'failed';
-                        $transaction->payment_details = json_encode($orderStatus);
+                        $transaction->payment_details = $orderStatus;
                         $transaction->save();
                     }
                 }
@@ -1144,5 +1148,18 @@ class WalletController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Always fetch latest wallet balance from DB to avoid stale auth model state.
+     */
+    private function getCurrentWalletBalance(int $userId): float
+    {
+        return (float) (User::where('id', $userId)->value('wallet_balance') ?? 0);
+    }
+
+    private function invalidateWalletBalanceCache(int $userId): void
+    {
+        Cache::forget('wallet_balance_'.$userId);
     }
 }

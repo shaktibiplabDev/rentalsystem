@@ -190,14 +190,8 @@ class WebhookController extends Controller
             DB::rollBack();
             Log::error('Wallet credit failed', ['error' => $e->getMessage(), 'order_id' => $orderId]);
 
-            // Mark transaction as failed
-            WalletTransaction::where('id', $transaction->id)
-                ->update([
-                    'status' => 'failed',
-                    'payment_details' => json_encode(['error' => $e->getMessage(), 'failed_at' => now()]),
-                ]);
-
-            // Do NOT mark idempotent – allow retry
+            // Do not mark as failed here: this may be transient (deadlock/network),
+            // and retry via webhook polling should still be possible.
             return response()->json(['success' => false, 'message' => 'Failed to credit wallet'], 500);
         }
     }
