@@ -46,6 +46,13 @@ class ProfileController extends Controller
                     'role' => $user->role,
                     'wallet_balance' => $user->wallet_balance,
                     'can_change_email' => !($user->is_google_user && $user->google_id),
+                    'email_verified' => $user->hasVerifiedEmail(),
+                    'is_google_user' => (bool) $user->is_google_user,
+                    'has_google_linked' => !empty($user->google_id),
+                    'has_password' => $user->hasPassword(),
+                    'needs_password_setup' => $user->needsPasswordSetup(),
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at,
                     
                     // Business Information
                     'business' => [
