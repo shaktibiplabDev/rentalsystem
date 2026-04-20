@@ -17,44 +17,32 @@ return Application::configure(basePath: dirname(__DIR__))
     )
 
     ->withMiddleware(function (Middleware $middleware) {
-
-        // =============================================
-        // REGISTER MIDDLEWARE ALIASES
-        // =============================================
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'security.headers' => SecurityHeaders::class,
         ]);
 
-        // =============================================
-        // APPLY SECURITY HEADERS TO API ROUTES
-        // =============================================
         $middleware->api(prepend: [
             SecurityHeaders::class,
         ]);
-
-        // OPTIONAL: Apply globally (web + api)
-        // $middleware->prepend([
-        //     SecurityHeaders::class,
-        // ]);
     })
 
     ->withExceptions(function (Exceptions $exceptions) {
-
-        // =============================================
-        // HANDLE UNAUTHENTICATED (TOKEN INVALID/EXPIRED)
-        // =============================================
+        // HANDLE UNAUTHENTICATED - THIS SHOULD BE FIRST
         $exceptions->render(function (AuthenticationException $e, Request $request) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthenticated.',
-                'error' => 'Token expired or invalid.'
-            ], 401);
+            // Only return JSON for API requests
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'Token expired or invalid.'
+                ], 401);
+            }
+            // For non-API requests, let it redirect
+            throw $e;
         });
 
-        // =============================================
-        // HANDLE FORBIDDEN (NO PERMISSION)
-        // =============================================
+        // HANDLE FORBIDDEN
         $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
             return response()->json([
                 'success' => false,
@@ -63,17 +51,17 @@ return Application::configure(basePath: dirname(__DIR__))
             ], 403);
         });
 
-        // =============================================
-        // HANDLE ALL OTHER EXCEPTIONS (SAFE FALLBACK)
-        // =============================================
-        $exceptions->render(function (\Throwable $e, Request $request) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Server Error',
-                'error' => app()->environment('local') ? $e->getMessage() : 'Something went wrong'
-            ], 500);
-        });
-
+        // OPTIONAL: Handle other exceptions only in debug mode
+        if (app()->environment('local')) {
+            $exceptions->render(function (\Throwable $e, Request $request) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Server Error',
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ], 500);
+            });
+        }
     })
 
     ->create();
