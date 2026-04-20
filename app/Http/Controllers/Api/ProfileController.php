@@ -829,7 +829,7 @@ class ProfileController extends Controller
             ]
         );
 
-        $verificationLink = route('verification.verify', ['token' => $token]);
+        $verificationLink = url('/email/verify/' . $token);
 
         $subject = 'Verify Your New Email - Vehicle Rental System';
         $htmlContent = "
