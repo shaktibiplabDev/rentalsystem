@@ -30,6 +30,17 @@ use Illuminate\Support\Facades\Route;
 */
 
 // =============================================
+// 🔐 FIX: Add this route to handle login redirects from auth middleware
+// =============================================
+Route::get('/login', function () {
+    return response()->json([
+        'success' => false,
+        'message' => 'Unauthenticated.',
+        'error' => 'No valid authentication token provided or token has expired.'
+    ], 401);
+})->name('login');
+
+// =============================================
 // 🔐 PUBLIC AUTHENTICATION ROUTES (With Rate Limiting)
 // =============================================
 
