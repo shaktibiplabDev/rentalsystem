@@ -48,7 +48,6 @@ class CashfreeService
         // ⚠️ CRITICAL: Webhook secret - MUST be configured in Cashfree Dashboard
         // How to get: Cashfree Dashboard → Payment Gateway → Developers → Webhook Configuration
         // After creating webhook, copy the "Secret Key" to .env as CASHFREE_WEBHOOK_SECRET
-        $this->webhookSecret = config('cashfree.webhook_secret');
 
         if (empty($this->verificationClientId) || empty($this->verificationClientSecret)) {
             Log::warning('Cashfree verification credentials not configured');
@@ -389,6 +388,122 @@ class CashfreeService
             'success' => false,
             'error' => 'Service temporarily unavailable after '.$maxAttempts.' attempts',
         ];
+    }
+
+    /**
+     * Verify GST number with Cashfree API
+     *
+     * @param  string|null  $businessName  (optional for better matching)
+     */
+    public function verifyGST(string $gstNumber, ?string $businessName = null): array
+    {
+        try {
+            $payload = ['GSTIN' => $gstNumber];
+
+            // Add business name if provided for better verification
+            if ($businessName) {
+                $payload['business_name'] = $businessName;
+            }
+
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'x-api-version' => $this->apiVersion,
+                'x-client-id' => $this->verificationClientId,
+                'x-client-secret' => $this->verificationClientSecret,
+            ])->post($this->baseUrl.'/verification/gstin', $payload);
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                // Check if GSTIN exists
+                if (isset($data['valid']) && $data['valid'] === true && isset($data['GSTIN'])) {
+                    // Parse principal place address
+                    $principalAddress = $data['principal_place_split_address'] ?? null;
+                    $additionalAddresses = $data['additional_address_array'] ?? [];
+
+                    return [
+                        'success' => true,
+                        'valid' => true,
+                        'gst_number' => $data['GSTIN'],
+                        'legal_business_name' => $data['legal_name_of_business'] ?? null,
+                        'trade_business_name' => $data['trade_name_of_business'] ?? null,
+                        'business_name' => $data['trade_name_of_business'] ?? $data['legal_name_of_business'] ?? null,
+                        'date_of_registration' => $data['date_of_registration'] ?? null,
+                        'taxpayer_type' => $data['taxpayer_type'] ?? null,
+                        'gst_status' => $data['gst_in_status'] ?? null,
+                        'constitution_of_business' => $data['constitution_of_business'] ?? null,
+                        'center_jurisdiction' => $data['center_jurisdiction'] ?? null,
+                        'state_jurisdiction' => $data['state_jurisdiction'] ?? null,
+                        'last_update_date' => $data['last_update_date'] ?? null,
+                        'nature_of_business_activities' => $data['nature_of_business_activities'] ?? [],
+
+                        // Address information
+                        'address' => $data['principal_place_address'] ?? null,
+                        'principal_address_details' => $principalAddress ? [
+                            'building_name' => $principalAddress['building_name'] ?? null,
+                            'building_number' => $principalAddress['building_number'] ?? null,
+                            'street' => $principalAddress['street'] ?? null,
+                            'location' => $principalAddress['location'] ?? null,
+                            'city' => $principalAddress['city'] ?? null,
+                            'district' => $principalAddress['district'] ?? null,
+                            'state' => $principalAddress['state'] ?? null,
+                            'pincode' => $principalAddress['pincode'] ?? null,
+                            'latitude' => $principalAddress['latitude'] ?? null,
+                            'longitude' => $principalAddress['longitude'] ?? null,
+                        ] : null,
+
+                        'additional_addresses' => array_map(function ($addr) {
+                            return [
+                                'address' => $addr['address'] ?? null,
+                                'split_address' => $addr['split_address'] ?? null,
+                            ];
+                        }, $additionalAddresses),
+
+                        'reference_id' => $data['reference_id'] ?? null,
+                        'raw_response' => $data,
+                    ];
+                }
+
+                // GSTIN doesn't exist
+                return [
+                    'success' => false,
+                    'valid' => false,
+                    'error' => $data['message'] ?? 'GSTIN does not exist',
+                    'raw_response' => $data,
+                ];
+            }
+
+            // Handle API errors
+            $errorData = $response->json();
+            $errorMessage = $errorData['message'] ?? 'GST verification failed';
+
+            Log::error('GST verification API error', [
+                'gst_number' => $gstNumber,
+                'status_code' => $response->status(),
+                'error' => $errorMessage,
+                'response' => $errorData,
+            ]);
+
+            return [
+                'success' => false,
+                'valid' => false,
+                'error' => $errorMessage,
+                'status_code' => $response->status(),
+            ];
+
+        } catch (Exception $e) {
+            Log::error('GST verification exception', [
+                'gst_number' => $gstNumber,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'valid' => false,
+                'error' => 'Failed to connect to verification service',
+            ];
+        }
     }
 
     /**

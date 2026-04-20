@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RentalController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SettingController;
@@ -100,6 +101,40 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::post('/change-password', [AuthController::class, 'changePassword']);
         Route::post('/refresh-token', [AuthController::class, 'refreshToken']);
+    });
+
+    // =============================================
+    // 🏪 BUSINESS PROFILE MANAGEMENT
+    // =============================================
+    Route::prefix('profile')->group(function () {
+        // Get complete profile (one API call - returns everything)
+        Route::get('/', [ProfileController::class, 'show']);
+        
+        // Update basic profile (name, phone, avatar only)
+        Route::put('/', [ProfileController::class, 'update']);
+        
+        // Email change with verification
+        Route::post('/email/change', [ProfileController::class, 'changeEmail']);
+        Route::post('/email/verify-change', [ProfileController::class, 'verifyEmailChange']);
+        
+        // Business setup (manual entry - no GST verification)
+        Route::post('/business/setup', [ProfileController::class, 'setupBusiness']);
+        
+        // Update business display info (name, address - always editable)
+        Route::put('/business/display', [ProfileController::class, 'updateBusinessDisplay']);
+        
+        // Get business verification status
+        Route::get('/business/status', [ProfileController::class, 'getBusinessStatus']);
+        
+        // GST verification (optional, can be added anytime)
+        Route::post('/gst/add', [ProfileController::class, 'addGST']);
+        Route::get('/gst/status', [ProfileController::class, 'getGSTStatus']);
+        
+        // Location management (shop coordinates)
+        Route::post('/location', [ProfileController::class, 'updateLocation']);
+        
+        // Business logo upload
+        Route::post('/business/logo', [ProfileController::class, 'uploadLogo']);
     });
 
     // =============================================
