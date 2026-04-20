@@ -28,6 +28,24 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_google_user',
         'google_verified_at',
         'password_set_required',
+        // Business fields
+        'business_display_name',
+        'business_display_address',
+        'legal_business_name',
+        'gst_number',
+        'gst_verified_at',
+        'gst_verification_data',
+        'gst_status',
+        'taxpayer_type',
+        'constitution_of_business',
+        'nature_of_business_activities',
+        'registered_business_address',
+        'latitude',
+        'longitude',
+        'business_phone',
+        'business_email',
+        'business_logo',
+        'business_verification_status',
     ];
 
     protected $hidden = [
@@ -42,6 +60,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'password' => 'hashed',
         'is_google_user' => 'boolean',
         'password_set_required' => 'boolean',
+        'gst_verified_at' => 'datetime',
+        'gst_verification_data' => 'array',
+        'nature_of_business_activities' => 'array',
+        'latitude' => 'decimal:8',
+        'longitude' => 'decimal:8',
     ];
 
     public function vehicles()
@@ -113,6 +136,78 @@ class User extends Authenticatable implements MustVerifyEmail
     public function needsPasswordSetup()
     {
         return $this->is_google_user && ! $this->hasPassword() && $this->password_set_required;
+    }
+
+    /**
+     * Check if user has business details
+     */
+    public function hasBusinessDetails()
+    {
+        return ! is_null($this->business_display_name) || ! is_null($this->legal_business_name);
+    }
+
+    /**
+     * Check if GST is verified
+     */
+    public function isGstVerified()
+    {
+        return ! is_null($this->gst_verified_at);
+    }
+
+    /**
+     * Check if business is verified
+     */
+    public function isBusinessVerified()
+    {
+        return $this->business_verification_status === 'verified';
+    }
+
+    /**
+     * Check if GST needs verification
+     */
+    public function needsGstVerification()
+    {
+        return ! is_null($this->gst_number) && is_null($this->gst_verified_at);
+    }
+
+    /**
+     * Get verification status text
+     */
+    public function getVerificationStatusTextAttribute()
+    {
+        if ($this->business_verification_status === 'verified') {
+            return 'Verified Business ✓';
+        }
+        
+        if ($this->gst_number && !$this->isGstVerified()) {
+            return 'GST Pending Verification';
+        }
+        
+        if ($this->business_display_name) {
+            return 'Basic Profile (Unverified)';
+        }
+        
+        return 'Not Setup';
+    }
+
+    /**
+     * Get next step for verification
+     */
+    public function getNextVerificationStepAttribute()
+    {
+        if (!$this->business_display_name) {
+            return 'Complete business profile setup';
+        }
+        
+        if ($this->business_verification_status !== 'verified' && !$this->gst_number) {
+            return 'Add GST number to get verified';
+        }
+        
+        if ($this->gst_number && !$this->isGstVerified()) {
+            return 'GST verification in progress';
+        }
+        
+        return null;
     }
 
     protected static function booted()
