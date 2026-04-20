@@ -7,6 +7,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\AuthenticateApi; // Add this
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,32 +18,37 @@ return Application::configure(basePath: dirname(__DIR__))
     )
 
     ->withMiddleware(function (Middleware $middleware) {
+        // Register middleware aliases
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'security.headers' => SecurityHeaders::class,
+            'auth.api' => AuthenticateApi::class, // Add this
         ]);
 
+        // Replace the default auth middleware with our custom one for API
         $middleware->api(prepend: [
             SecurityHeaders::class,
         ]);
+        
+        // Override the default auth middleware
+        $middleware->replace(\Illuminate\Auth\Middleware\Authenticate::class, AuthenticateApi::class);
     })
 
     ->withExceptions(function (Exceptions $exceptions) {
-        // HANDLE UNAUTHENTICATED - THIS SHOULD BE FIRST
+        // Handle unauthenticated
         $exceptions->render(function (AuthenticationException $e, Request $request) {
-            // Only return JSON for API requests
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthenticated.',
-                    'error' => 'Token expired or invalid.'
+                    'error' => 'No valid authentication token provided or token has expired.',
+                    'code' => 401
                 ], 401);
             }
-            // For non-API requests, let it redirect
             throw $e;
         });
 
-        // HANDLE FORBIDDEN
+        // Handle forbidden
         $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
             return response()->json([
                 'success' => false,
@@ -51,14 +57,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ], 403);
         });
 
-        // OPTIONAL: Handle other exceptions only in debug mode
+        // Handle other exceptions (optional)
         if (app()->environment('local')) {
             $exceptions->render(function (\Throwable $e, Request $request) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Server Error',
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
+                    'error' => $e->getMessage()
                 ], 500);
             });
         }
