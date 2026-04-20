@@ -45,6 +45,7 @@ class ProfileController extends Controller
                     'avatar_url' => $user->avatar_url,
                     'role' => $user->role,
                     'wallet_balance' => $user->wallet_balance,
+                    'can_change_email' => !($user->is_google_user && $user->google_id),
                     
                     // Business Information
                     'business' => [
@@ -98,6 +99,11 @@ class ProfileController extends Controller
                 'avatar' => 'nullable|image|mimes:jpeg,png,jpg|max:5120',
             ]);
             
+            // Remove email from validated array if present (email has separate flow)
+            if (isset($validated['email'])) {
+                unset($validated['email']);
+            }
+            
             DB::transaction(function () use ($user, $validated, $request) {
                 // Handle avatar upload
                 if ($request->hasFile('avatar')) {
@@ -150,6 +156,17 @@ class ProfileController extends Controller
             ]);
             
             $user = auth()->user();
+            
+            // CHECK: Google-authenticated users cannot change email
+            if ($user->is_google_user && $user->google_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Google-authenticated users cannot change email. Email is managed by Google.',
+                    'errors' => [
+                        'email' => ['Email is linked to your Google account and cannot be changed here.']
+                    ]
+                ], 403);
+            }
             
             // Don't allow changing to same email
             if ($user->email === $validated['new_email']) {
@@ -215,6 +232,14 @@ class ProfileController extends Controller
             ]);
             
             $user = auth()->user();
+            
+            // CHECK: Google-authenticated users cannot change email
+            if ($user->is_google_user && $user->google_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Google-authenticated users cannot change email.',
+                ], 403);
+            }
             
             // Get pending email change from cache
             $pending = Cache::get("email_change_{$user->id}");
