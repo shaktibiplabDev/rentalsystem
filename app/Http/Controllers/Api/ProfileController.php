@@ -35,6 +35,15 @@ class ProfileController extends Controller
         try {
             $user = auth()->user();
             
+            // Check if user is authenticated
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -86,7 +95,8 @@ class ProfileController extends Controller
             Log::error('Profile fetch error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to fetch profile'
+                'message' => 'Failed to fetch profile',
+                'error' => 'An unexpected error occurred'
             ], 500);
         }
     }
@@ -99,6 +109,14 @@ class ProfileController extends Controller
     {
         try {
             $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
             
             $validated = $request->validate([
                 'name' => 'sometimes|string|max:255',
@@ -158,11 +176,19 @@ class ProfileController extends Controller
     public function changeEmail(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'new_email' => 'required|email|max:255|unique:users,email',
             ]);
-            
-            $user = auth()->user();
             
             // CHECK: Google-authenticated users cannot change email
             if ($user->is_google_user && $user->google_id) {
@@ -233,12 +259,20 @@ class ProfileController extends Controller
     public function verifyEmailChange(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'token' => 'required|string|size:60',
                 'otp' => 'required|string|size:6',
             ]);
-            
-            $user = auth()->user();
             
             // CHECK: Google-authenticated users cannot change email
             if ($user->is_google_user && $user->google_id) {
@@ -326,6 +360,16 @@ class ProfileController extends Controller
     public function setupBusiness(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'display_name' => 'required|string|max:255',
                 'display_address' => 'required|string|max:500',
@@ -334,8 +378,6 @@ class ProfileController extends Controller
                 'latitude' => 'nullable|numeric|between:-90,90',
                 'longitude' => 'nullable|numeric|between:-180,180',
             ]);
-            
-            $user = auth()->user();
             
             DB::transaction(function () use ($user, $validated) {
                 $user->update([
@@ -381,14 +423,22 @@ class ProfileController extends Controller
     public function updateBusinessDisplay(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'display_name' => 'required|string|max:255',
                 'display_address' => 'required|string|max:500',
                 'phone' => 'nullable|string|max:20',
                 'email' => 'nullable|email|max:255',
             ]);
-            
-            $user = auth()->user();
             
             $user->update([
                 'business_display_name' => $validated['display_name'],
@@ -429,13 +479,21 @@ class ProfileController extends Controller
     public function updateLocation(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'latitude' => 'required|numeric|between:-90,90',
                 'longitude' => 'required|numeric|between:-180,180',
                 'address' => 'nullable|string|max:500',
             ]);
-            
-            $user = auth()->user();
             
             $updateData = [
                 'latitude' => $validated['latitude'],
@@ -479,12 +537,20 @@ class ProfileController extends Controller
     public function addGST(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'gst_number' => 'required|string|regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i',
                 'business_name' => 'nullable|string|max:255',
             ]);
-            
-            $user = auth()->user();
             
             if ($user->isGstVerified()) {
                 return response()->json([
@@ -574,6 +640,14 @@ class ProfileController extends Controller
         try {
             $user = auth()->user();
             
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -610,6 +684,14 @@ class ProfileController extends Controller
         try {
             $user = auth()->user();
             
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -638,11 +720,19 @@ class ProfileController extends Controller
     public function uploadLogo(Request $request)
     {
         try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'error' => 'No valid authentication token provided or token has expired.'
+                ], 401);
+            }
+            
             $validated = $request->validate([
                 'logo' => 'required|image|mimes:jpeg,png,jpg|max:5120',
             ]);
-            
-            $user = auth()->user();
             
             if ($user->business_logo && Storage::disk('public')->exists($user->business_logo)) {
                 Storage::disk('public')->delete($user->business_logo);
