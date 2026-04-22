@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Support\Facades\Log;
 
-
 class ShopController extends Controller
 {
     public function index()
@@ -26,46 +25,35 @@ class ShopController extends Controller
     {
         $shop = User::where('role', 'user')->findOrFail($id);
 
-        if (request()->ajax()) {
-            $rentals = Rental::where('user_id', $id)->get();
-            $verifications = $rentals->whereNotNull('verification_completed_at');
-            $newVerifs = $verifications->where('is_verification_cached', false)->count();
-            $repeatVerifs = $verifications->where('is_verification_cached', true)->count();
-            $income = ($newVerifs * 1) + ($repeatVerifs * 3);
-            $fleet = Vehicle::where('user_id', $id)->get()->map(fn ($v) => "<span class='chip'><i class='fas fa-car'></i>{$v->name}</span>")->join('');
+        // Get all rentals for this shop
+        $allRentals = Rental::where('user_id', $id)->get();
+        $completedRentals = $allRentals->where('status', 'completed');
 
-            // Monthly stats
-            $feb = Rental::where('user_id', $id)->whereMonth('created_at', 2)->whereYear('created_at', 2026)->count();
-            $mar = Rental::where('user_id', $id)->whereMonth('created_at', 3)->whereYear('created_at', 2026)->count();
+        // Calculate stats
+        $stats = [
+            'total_rentals' => $allRentals->count(),
+            'completed_rentals' => $completedRentals->count(),
+            'total_earnings' => $completedRentals->sum('total_price'),
+            'verification_fees' => $allRentals->sum('verification_fee_deducted'),
+            'active_rentals' => $allRentals->where('status', 'active')->count(),
+            'cancelled_rentals' => $allRentals->where('status', 'cancelled')->count(),
+            'verifications' => $allRentals->whereNotNull('verification_completed_at')->count(),
+            'fresh_verifications' => $allRentals->where('is_verification_cached', false)->count(),
+            'cached_verifications' => $allRentals->where('is_verification_cached', true)->count(),
+            'platform_profit' => ($allRentals->where('is_verification_cached', false)->count() * 1) +
+                                ($allRentals->where('is_verification_cached', true)->count() * 3),
+        ];
 
-            // Active and completed rentals
-            $activeRentals = $rentals->where('status', 'active')->count();
-            $completedRentals = $rentals->where('status', 'completed')->count();
+        // Get paginated rentals for display
+        $rentals = Rental::where('user_id', $id)
+            ->with(['vehicle', 'customer'])
+            ->latest()
+            ->paginate(15);
 
-            return response()->json([
-                'name' => $shop->name,
-                'email' => $shop->email,
-                'gst_number' => $shop->gst_number,
-                'wallet' => number_format($shop->wallet_balance, 2),
-                'verifications' => $verifications->count(),
-                'fresh_verifications' => $newVerifs,
-                'cached_verifications' => $repeatVerifs,
-                'income' => number_format($income, 2),
-                'total_income' => number_format($rentals->sum('total_price'), 2),
-                'active_rentals' => $activeRentals,
-                'completed_rentals' => $completedRentals,
-                'total_rentals' => $rentals->count(),
-                'fleet' => $fleet,
-                'feb' => $feb,
-                'mar' => $mar,
-            ]);
-        }
-
-        $rentals = Rental::where('user_id', $id)->with(['vehicle', 'customer'])->latest()->paginate(15);
+        // Get vehicles
         $vehicles = Vehicle::where('user_id', $id)->get();
-        $totalEarnings = Rental::where('user_id', $id)->where('status', 'completed')->sum('total_price');
 
-        return view('admin.shops.show', compact('shop', 'rentals', 'vehicles', 'totalEarnings'));
+        return view('admin.shops.show', compact('shop', 'rentals', 'vehicles', 'stats'));
     }
 
     /**

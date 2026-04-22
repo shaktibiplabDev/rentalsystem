@@ -21,32 +21,67 @@
                 </div>
                 <div class="dd-info" style="margin-top: 8px;">
                     <span class="badge {{ $shop->wallet_balance > 50000 ? 'badge-green' : 'badge-accent' }}">
-                        Wallet: ₹{{ number_format($shop->wallet_balance, 2) }}
+                        💰 Wallet: ₹{{ number_format($shop->wallet_balance, 2) }}
                     </span>
-                    <span class="badge badge-accent">Role: {{ ucfirst($shop->role) }}</span>
+                    <span class="badge badge-accent">👤 Role: {{ ucfirst($shop->role) }}</span>
                     <span class="badge {{ $shop->business_verification_status === 'verified' ? 'badge-green' : 'badge-amber' }}">
-                        {{ ucfirst($shop->business_verification_status) }}
+                        ✅ {{ ucfirst($shop->business_verification_status) }}
                     </span>
                 </div>
             </div>
 
-            <!-- Stats Cards -->
+            <!-- Stats Cards - Row 1 -->
             <div class="db-metrics" style="margin-bottom: 20px;">
                 <div class="mcard">
                     <div class="ml">Total Rentals</div>
                     <div class="mv mv-accent">{{ $stats['total_rentals'] ?? 0 }}</div>
+                    <div class="ms">{{ $stats['active_rentals'] ?? 0 }} active</div>
                 </div>
                 <div class="mcard">
                     <div class="ml">Completed Rentals</div>
                     <div class="mv mv-green">{{ $stats['completed_rentals'] ?? 0 }}</div>
+                    <div class="ms">{{ $stats['cancelled_rentals'] ?? 0 }} cancelled</div>
                 </div>
                 <div class="mcard">
                     <div class="ml">Total Earnings</div>
                     <div class="mv mv-amber">₹{{ number_format($stats['total_earnings'] ?? 0, 2) }}</div>
+                    <div class="ms">From completed rentals</div>
+                </div>
+                <div class="mcard">
+                    <div class="ml">Wallet Balance</div>
+                    <div class="mv mv-green">₹{{ number_format($shop->wallet_balance, 2) }}</div>
+                    <div class="ms">Current balance</div>
+                </div>
+            </div>
+
+            <!-- Stats Cards - Row 2 (Verification Stats) -->
+            <div class="db-metrics" style="margin-bottom: 20px;">
+                <div class="mcard">
+                    <div class="ml">Verifications</div>
+                    <div class="mv">{{ $stats['verifications'] ?? 0 }}</div>
+                    <div class="ms">{{ $stats['fresh_verifications'] ?? 0 }} fresh · {{ $stats['cached_verifications'] ?? 0 }} cached</div>
                 </div>
                 <div class="mcard">
                     <div class="ml">Verification Fees</div>
                     <div class="mv">₹{{ number_format($stats['verification_fees'] ?? 0, 2) }}</div>
+                    <div class="ms">Deducted from wallet</div>
+                </div>
+                <div class="mcard">
+                    <div class="ml">Platform Profit</div>
+                    <div class="mv mv-green">₹{{ number_format($stats['platform_profit'] ?? 0, 2) }}</div>
+                    <div class="ms">₹1/fresh · ₹3/cached</div>
+                </div>
+                <div class="mcard">
+                    <div class="ml">Net Profit Margin</div>
+                    <div class="mv mv-accent">
+                        @php
+                            $verifFees = $stats['verification_fees'] ?? 0;
+                            $platformProfit = $stats['platform_profit'] ?? 0;
+                            $margin = $verifFees > 0 ? round(($platformProfit / $verifFees) * 100, 1) : 0;
+                        @endphp
+                        {{ $margin }}%
+                    </div>
+                    <div class="ms">Platform's share</div>
                 </div>
             </div>
 
@@ -56,9 +91,6 @@
                 <div class="panel">
                     <div class="ph">
                         <span class="ph-title">Fleet Vehicles ({{ $vehicles->count() }})</span>
-                        <button class="btn btn-accent btn-sm" style="padding: 4px 12px;" onclick="alert('Add vehicle feature coming soon')">
-                            <i class="fas fa-plus"></i> Add
-                        </button>
                     </div>
                     <div class="pb">
                         @forelse($vehicles as $vehicle)
@@ -86,7 +118,7 @@
                     <div class="ph">
                         <span class="ph-title">Recent Rentals</span>
                         <a href="{{ route('admin.rentals.index') }}?user_id={{ $shop->id }}" class="btn btn-ghost btn-sm" style="padding: 4px 12px;">
-                            View All
+                            View All ({{ $stats['total_rentals'] ?? 0 }})
                         </a>
                     </div>
                     <div class="pb">
