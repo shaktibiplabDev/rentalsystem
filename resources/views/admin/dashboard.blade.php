@@ -33,7 +33,7 @@
                     <div class="mv mv-accent" style="font-size: 24px;">{{ $totalShops }}</div>
                 </div>
                 <div class="mcard">
-                    <div class="ml">Total Wallet</div>
+                    <div class="ml">Total Shop Wallet</div>
                     <div class="mv mv-green" style="font-size: 24px;">₹{{ number_format($totalWallet, 2) }}</div>
                 </div>
                 <div class="mcard">
@@ -42,8 +42,9 @@
                     <div class="ms">{{ $activeRentals }} active</div>
                 </div>
                 <div class="mcard">
-                    <div class="ml">Total Revenue</div>
-                    <div class="mv mv-amber" style="font-size: 24px;">₹{{ number_format($totalRevenue, 2) }}</div>
+                    <div class="ml">Platform Revenue</div>
+                    <div class="mv mv-amber" style="font-size: 24px;">₹{{ number_format($platformRevenue, 2) }}</div>
+                    <div class="ms">From verifications</div>
                 </div>
             </div>
 
@@ -56,8 +57,8 @@
                 </div>
                 <div class="mcard">
                     <div class="ml">Platform Profit</div>
-                    <div class="mv mv-green" style="font-size: 24px;">₹{{ number_format($platformProfit, 2) }}</div>
-                    <div class="ms">From verifications</div>
+                    <div class="mv mv-green" style="font-size: 24px;">₹{{ number_format($platformRevenue, 2) }}</div>
+                    <div class="ms">₹1/fresh · ₹3/cached</div>
                 </div>
                 <div class="mcard">
                     <div class="ml">Vehicles</div>
@@ -65,7 +66,7 @@
                     <div class="ms">{{ $availableVehicles }} avail · {{ $onRentVehicles }} rent</div>
                 </div>
                 <div class="mcard">
-                    <div class="ml">Growth (30d)</div>
+                    <div class="ml">Revenue Growth (30d)</div>
                     <div class="mv mv-amber" style="font-size: 24px;">{{ $growth >= 0 ? '+' : '' }}{{ $growth }}%</div>
                 </div>
             </div>
@@ -115,8 +116,8 @@
                     </div>
                     <div class="divider" style="margin: 12px 0;"></div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span style="font-weight: 600;">Total profit:</span>
-                        <span style="color: var(--accent); font-weight: 700;">₹{{ number_format($platformProfit, 2) }}</span>
+                        <span style="font-weight: 600;">Total platform revenue:</span>
+                        <span style="color: var(--accent); font-weight: 700;">₹{{ number_format($platformRevenue, 2) }}</span>
                     </div>
                 </div>
             </div>
@@ -156,19 +157,10 @@ function selectShop(shopId) {
             document.getElementById('shopDetailPanel').innerHTML = `
                 <div class="dd-hero">
                     <div class="dd-name">Error</div>
-                    <div class="dd-meta">Could not load shop details. Please try again.</div>
+                    <div class="dd-meta">Could not load shop details. Please make sure the route exists: /admin/shops/${shopId}/details</div>
                 </div>
             `;
         });
 }
-
-// Optional: Auto-select first shop on page load
-document.addEventListener('DOMContentLoaded', function() {
-    const firstShop = document.querySelector('.shop-item');
-    if (firstShop && firstShop.dataset.shopId) {
-        // Uncomment to auto-select first shop
-        // selectShop(parseInt(firstShop.dataset.shopId));
-    }
-});
 </script>
 @endsection
