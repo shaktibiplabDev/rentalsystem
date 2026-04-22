@@ -8,28 +8,26 @@
             <div class="ph">
                 <span class="ph-title">Shops ({{ $shops->count() }})</span>
             </div>
-            <div class="pb" id="shopList" style="padding: 0;">
-                @forelse($shops as $shop)
-                <div class="sli" data-id="{{ $shop->id }}" onclick="loadShopDetails({{ $shop->id }})">
+            <div class="pb" style="padding: 0;">
+                @foreach($shops as $shop)
+                <div class="sli shop-item" data-shop-id="{{ $shop->id }}" onclick="selectShop({{ $shop->id }})" style="cursor: pointer;">
                     <div class="ibox ibox-sm"><i class="fas fa-store-alt"></i></div>
                     <div class="sli-info">
                         <div class="sli-name">{{ $shop->name }}</div>
-                        <div class="sli-sub">{{ $shop->business_display_address ? substr($shop->business_display_address, 0, 30) : 'Address not set' }}</div>
+                        <div class="sli-sub">{{ $shop->business_display_address ? substr($shop->business_display_address, 0, 35) : 'Address not set' }}</div>
                     </div>
-                    <span class="badge badge-{{ $shop->wallet_balance > 50000 ? 'green' : ($shop->wallet_balance > 10000 ? 'accent' : 'red') }}">
+                    <span class="badge {{ $shop->wallet_balance > 50000 ? 'badge-green' : ($shop->wallet_balance > 10000 ? 'badge-accent' : 'badge-red') }}">
                         ₹{{ number_format($shop->wallet_balance, 2) }}
                     </span>
                 </div>
-                @empty
-                <div style="padding: 20px; text-align: center;">No shops found</div>
-                @endforelse
+                @endforeach
             </div>
         </div>
 
         <!-- Middle: Metrics & Shop Detail -->
         <div class="db-mid">
             <!-- Row 1: Key Metrics -->
-            <div class="db-metrics" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            <div class="db-metrics">
                 <div class="mcard">
                     <div class="ml">Total Shops</div>
                     <div class="mv mv-accent" style="font-size: 24px;">{{ $totalShops }}</div>
@@ -50,7 +48,7 @@
             </div>
 
             <!-- Row 2: More Metrics -->
-            <div class="db-metrics" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px;">
+            <div class="db-metrics" style="margin-top: 12px;">
                 <div class="mcard">
                     <div class="ml">Verifications</div>
                     <div class="mv" style="font-size: 24px;">{{ $totalVerifications }}</div>
@@ -72,12 +70,9 @@
                 </div>
             </div>
 
-            <!-- Shop Detail Panel - Shows when shop clicked -->
+            <!-- Shop Detail Panel -->
             <div class="db-detail" style="margin-top: 12px;" id="shopDetailPanel">
-                <div class="dd-hero">
-                    <div class="dd-name">Select a shop</div>
-                    <div class="dd-meta">Click on any shop from the left panel to view details</div>
-                </div>
+                @include('admin.partials.shop_detail', ['shop' => $selectedShop])
             </div>
         </div>
 
@@ -120,7 +115,7 @@
                     </div>
                     <div class="divider" style="margin: 12px 0;"></div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span>Total profit:</span>
+                        <span style="font-weight: 600;">Total profit:</span>
                         <span style="color: var(--accent); font-weight: 700;">₹{{ number_format($platformProfit, 2) }}</span>
                     </div>
                 </div>
@@ -130,7 +125,7 @@
 </div>
 
 <script>
-function loadShopDetails(shopId) {
+function selectShop(shopId) {
     // Show loading state
     document.getElementById('shopDetailPanel').innerHTML = `
         <div class="dd-hero">
@@ -139,91 +134,41 @@ function loadShopDetails(shopId) {
         </div>
     `;
     
-    // Fetch shop rentals directly from your API
-    fetch(`/api/admin/rentals`)
-        .then(res => res.json())
-        .then(data => {
-            const rentals = data.data || [];
-            const shopRentals = rentals.filter(r => r.user && r.user.id == shopId);
-            
-            // Get shop info from the clicked element
-            const shopEl = document.querySelector(`.sli[data-id="${shopId}"]`);
-            const shopName = shopEl?.querySelector('.sli-name')?.innerText || 'Shop';
-            
-            // Calculate stats
-            const verifications = shopRentals.filter(r => r.verification_completed_at).length;
-            const totalIncome = shopRentals.reduce((sum, r) => sum + (r.total_price || 0), 0);
-            const activeRentals = shopRentals.filter(r => r.status === 'active').length;
-            const completedRentals = shopRentals.filter(r => r.status === 'completed').length;
-            
-            // Get wallet from displayed element
-            const walletText = shopEl?.querySelector('.badge')?.innerText || '₹0';
-            const wallet = parseFloat(walletText.replace('₹', '').replace(/,/g, '')) || 0;
-            
-            document.getElementById('shopDetailPanel').innerHTML = `
-                <div class="dd-hero">
-                    <div class="dd-name">${escapeHtml(shopName)}</div>
-                    <div class="dd-meta">Wallet: ₹${wallet.toLocaleString()} · ${shopRentals.length} total rentals</div>
-                </div>
-                <div class="dd-stats" style="display: grid; grid-template-columns: repeat(3, 1fr);">
-                    <div class="dd-stat"><div class="dd-stat-v mv-accent">₹${wallet.toLocaleString()}</div><div class="dd-stat-l">Wallet</div></div>
-                    <div class="dd-stat"><div class="dd-stat-v">${verifications}</div><div class="dd-stat-l">Verifications</div></div>
-                    <div class="dd-stat"><div class="dd-stat-v mv-green">₹${totalIncome.toLocaleString()}</div><div class="dd-stat-l">Income</div></div>
-                </div>
-                <div class="dd-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
-                    <div class="dd-section" style="padding: 12px;">
-                        <div class="section-label">Rental Stats</div>
-                        <div style="margin-top: 8px;">
-                            <div style="display: flex; justify-content: space-between; padding: 5px 0;">
-                                <span>Active Rentals</span>
-                                <span class="badge badge-accent">${activeRentals}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 5px 0;">
-                                <span>Completed</span>
-                                <span class="badge badge-green">${completedRentals}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 5px 0;">
-                                <span>Cancelled</span>
-                                <span class="badge badge-red">${shopRentals.filter(r => r.status === 'cancelled').length}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="dd-section" style="padding: 12px;">
-                        <div class="section-label">Recent Activity</div>
-                        <div style="margin-top: 8px; font-size: 10px;">
-                            ${shopRentals.slice(0, 3).map(r => `
-                                <div style="padding: 6px 0; border-bottom: 1px solid var(--border);">
-                                    <div>${r.vehicle?.name || 'Vehicle'} - ${r.status}</div>
-                                    <div style="color: var(--text-3);">${new Date(r.created_at).toLocaleDateString()}</div>
-                                </div>
-                            `).join('') || '<div style="padding: 6px 0;">No recent activity</div>'}
-                        </div>
-                    </div>
-                </div>
-                <div class="dd-actions" style="padding: 12px;">
-                    <a href="/admin/shops/${shopId}" class="btn btn-accent" style="width: 100%; text-align: center;"><i class="fas fa-eye"></i> View Full Details</a>
-                </div>
-            `;
+    fetch(`/admin/shops/${shopId}/details`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.text();
+        })
+        .then(html => {
+            document.getElementById('shopDetailPanel').innerHTML = html;
+            // Update active state on shop items
+            document.querySelectorAll('.shop-item').forEach(el => {
+                el.classList.remove('active');
+                if(parseInt(el.dataset.shopId) === shopId) {
+                    el.classList.add('active');
+                }
+            });
         })
         .catch(error => {
-            console.error('Error loading shop details:', error);
+            console.error('Error:', error);
             document.getElementById('shopDetailPanel').innerHTML = `
                 <div class="dd-hero">
                     <div class="dd-name">Error</div>
-                    <div class="dd-meta">Could not load shop details</div>
+                    <div class="dd-meta">Could not load shop details. Please try again.</div>
                 </div>
             `;
         });
 }
 
-function escapeHtml(str) {
-    if(!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-        if(m === '&') return '&amp;';
-        if(m === '<') return '&lt;';
-        if(m === '>') return '&gt;';
-        return m;
-    });
-}
+// Optional: Auto-select first shop on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const firstShop = document.querySelector('.shop-item');
+    if (firstShop && firstShop.dataset.shopId) {
+        // Uncomment to auto-select first shop
+        // selectShop(parseInt(firstShop.dataset.shopId));
+    }
+});
 </script>
 @endsection
