@@ -3,26 +3,23 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Rental;
 use App\Models\User;
-use App\Models\Vehicle;
+use App\Models\Rental;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        $totalUsers = User::count();
-        $totalVehicles = Vehicle::count();
-        $totalRentals = Rental::count();
-        $activeRentals = Rental::where('status', 'active')->count();
-        $totalEarnings = Rental::where('status', 'completed')->sum('total_price');
+        // Get all shops (users with role 'user')
+        $shops = User::where('role', 'user')
+            ->orderBy('created_at', 'desc')
+            ->get();
 
-        return view('admin.dashboard', compact(
-            'totalUsers',
-            'totalVehicles',
-            'totalRentals',
-            'activeRentals',
-            'totalEarnings'
-        ));
+        // Calculate totals
+        $totalWallet = $shops->sum('wallet_balance');
+        $totalRentals = Rental::count();
+        $totalRevenue = Rental::where('status', 'completed')->sum('total_price');
+
+        return view('admin.dashboard', compact('shops', 'totalWallet', 'totalRentals', 'totalRevenue'));
     }
 }

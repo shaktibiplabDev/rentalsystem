@@ -4,7 +4,6 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 
 class AdminMiddleware
 {
@@ -12,16 +11,20 @@ class AdminMiddleware
     {
         $user = auth()->user();
 
+        // Not authenticated
         if (!$user) {
-            return response()->json([
-                'message' => 'Unauthenticated'
-            ], 401);
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'Unauthenticated'], 401);
+            }
+            return redirect()->route('admin.login');
         }
 
+        // Authenticated but not admin
         if ($user->role !== 'admin') {
-            return response()->json([
-                'message' => 'Forbidden'
-            ], 403);
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'Forbidden - Admin access only'], 403);
+            }
+            abort(403, 'Unauthorized – Admin access only.');
         }
 
         return $next($request);
