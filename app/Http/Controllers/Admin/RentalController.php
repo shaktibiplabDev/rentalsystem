@@ -12,28 +12,40 @@ class RentalController extends Controller
     {
         $query = Rental::with(['user', 'vehicle', 'customer']);
         
+        // Filter by status
         if ($request->status) {
             $query->where('status', $request->status);
         }
         
+        // Filter by shop (user_id)
+        if ($request->user_id) {
+            $query->where('user_id', $request->user_id);
+        }
+        
+        // Search by customer name, vehicle name, or number plate
         if ($request->search) {
-            $query->whereHas('customer', fn($q) => $q->where('name', 'like', "%{$request->search}%"))
-                  ->orWhereHas('vehicle', fn($q) => $q->where('number_plate', 'like', "%{$request->search}%"))
-                  ->orWhereHas('user', fn($q) => $q->where('name', 'like', "%{$request->search}%"));
+            $query->where(function($q) use ($request) {
+                $q->whereHas('customer', fn($q2) => $q2->where('name', 'like', "%{$request->search}%"))
+                  ->orWhereHas('vehicle', fn($q2) => $q2->where('name', 'like', "%{$request->search}%"))
+                  ->orWhereHas('vehicle', fn($q2) => $q2->where('number_plate', 'like', "%{$request->search}%"));
+            });
         }
         
         $rentals = $query->latest()->paginate(20);
         
-        // Calculate profit per rental
-        foreach ($rentals as $rental) {
-            if ($rental->verification_completed_at) {
-                $rental->platform_profit = $rental->is_verification_cached ? 3 : 1;
-            } else {
-                $rental->platform_profit = 0;
-            }
-        }
+        // Calculate summary statistics
+        $summary = [
+            'total' => Rental::count(),
+            'active' => Rental::where('status', 'active')->count(),
+            'completed' => Rental::where('status', 'completed')->count(),
+            'cancelled' => Rental::where('status', 'cancelled')->count(),
+            'total_revenue' => Rental::where('status', 'completed')->sum('total_price'),
+            'platform_profit' => Rental::whereNotNull('verification_completed_at')
+                ->get()
+                ->sum(fn($r) => $r->is_verification_cached ? 3 : 1),
+        ];
         
-        return view('admin.rentals.index', compact('rentals'));
+        return view('admin.rentals.index', compact('rentals', 'summary'));
     }
     
     public function show($id)
@@ -48,24 +60,12 @@ class RentalController extends Controller
             $durationHours = round($rental->start_time->diffInHours(now()), 1);
         }
         
-        return view('admin.rentals.show', compact('rental', 'durationHours'));
-    }
-    
-    public function forceEnd($id)
-    {
-        $rental = Rental::where('status', 'active')->findOrFail($id);
-        
-        $rental->update([
-            'status' => 'completed',
-            'phase' => 'completed',
-            'end_time' => now(),
-            'return_completed_at' => now(),
-        ]);
-        
-        if ($rental->vehicle) {
-            $rental->vehicle->update(['status' => 'available']);
+        // Calculate platform profit
+        $platformProfit = 0;
+        if ($rental->verification_completed_at) {
+            $platformProfit = $rental->is_verification_cached ? 3 : 1;
         }
         
-        return redirect()->back()->with('success', 'Rental force-ended successfully.');
+        return view('admin.rentals.show', compact('rental', 'durationHours', 'platformProfit'));
     }
 }
