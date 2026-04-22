@@ -57,7 +57,7 @@
             @forelse(($shop->recent_rentals ?? []) as $rental)
             <div style="padding: 6px 0; border-bottom: 1px solid var(--border);">
                 <div><strong>{{ $rental->vehicle->name ?? 'Vehicle' }}</strong> - {{ ucfirst($rental->status) }}</div>
-                <div style="color: var(--text-3);">₹{{ number_format($rental->total_price ?? 0, 2) }} · {{ $rental->created_at->format('d M Y') }}</div>
+                <div style="color: var(--text-3);">₹{{ number_format($rental->total_price ?? 0, 2) }} · {{ \Carbon\Carbon::parse($rental->created_at)->format('d M Y') }}</div>
             </div>
             @empty
             <div style="padding: 6px 0; color: var(--text-3);">No recent rentals</div>
@@ -75,7 +75,7 @@
 </div>
 
 <div class="dd-actions" style="padding: 12px;">
-    <a href="/admin/shops/{{ $shop->id }}" class="btn btn-accent" style="width: 100%; text-align: center; text-decoration: none;">
+    <a href="{{ url('/admin/shops/' . $shop->id) }}" class="btn btn-accent" style="width: 100%; text-align: center; text-decoration: none;">
         <i class="fas fa-eye"></i> View Full Details
     </a>
 </div>

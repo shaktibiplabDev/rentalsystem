@@ -4,6 +4,7 @@
     <a href="{{ route('admin.map') }}" class="nav-item {{ request()->routeIs('admin.map') ? 'active' : '' }}"><i class="fas fa-map-marked-alt"></i></a>
     <div class="nav-sep"></div>
     <a href="{{ route('admin.fleet') }}" class="nav-item {{ request()->routeIs('admin.fleet') ? 'active' : '' }}"><i class="fas fa-car"></i></a>
+    <a href="{{ route('admin.shops.index') }}" class="nav-item {{ request()->routeIs('admin.shops.*') ? 'active' : '' }}"><i class="fas fa-store-alt"></i></a>
     <a href="{{ route('admin.customers.index') }}" class="nav-item {{ request()->routeIs('admin.customers.*') ? 'active' : '' }}"><i class="fas fa-users"></i></a>
     <a href="{{ route('admin.wallet.index') }}" class="nav-item {{ request()->routeIs('admin.wallet.*') ? 'active' : '' }}"><i class="fas fa-wallet"></i></a>
     <div class="nav-spacer"></div>
