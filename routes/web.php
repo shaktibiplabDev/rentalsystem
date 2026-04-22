@@ -64,11 +64,13 @@ use App\Http\Controllers\Admin\MapController;
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     // Dashboard
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    
+    // Shop details for AJAX (MUST come before resource routes)
+    Route::get('/shops/{id}/details', [ShopController::class, 'details'])->name('shops.details');
 
-    // Shop management (users with role 'owner')
+    // Shop management (users with role 'user')
     Route::resource('shops', ShopController::class)->only(['index', 'show']);
     Route::post('shops/{id}/status', [ShopController::class, 'updateStatus'])->name('shops.status');
-    Route::get('/shops/{id}/details', [DashboardController::class, 'shopDetails'])->name('shops.details');
 
     // Rental management
     Route::resource('rentals', RentalController::class)->only(['index', 'show']);
@@ -87,8 +89,12 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Platform settings
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
     Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
+    
+    // Map and Fleet
     Route::get('/map', [MapController::class, 'index'])->name('map');
     Route::get('/fleet', [VehicleController::class, 'index'])->name('fleet');
+    
+    // Profile
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
 });
 
