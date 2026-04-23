@@ -7,19 +7,29 @@ use App\Models\Customer;
 use App\Models\Rental;
 use App\Models\User;
 use App\Models\Vehicle;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ShopController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $shops = User::where('role', 'user')
-            ->withCount(['rentals', 'vehicles'])
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
-
+        $query = User::where('role', 'user')->withCount(['rentals', 'vehicles']);
+        
+        // Apply search filter
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%")
+                  ->orWhere('gst_number', 'like', "%{$search}%")
+                  ->orWhere('business_display_name', 'like', "%{$search}%");
+            });
+        }
+        
+        $shops = $query->orderBy('created_at', 'desc')->paginate(20);
         $totalShops = User::where('role', 'user')->count();
-        $shops = User::where('role', 'user')->withCount(['rentals', 'vehicles'])->paginate(20);
 
         return view('admin.shops.index', compact('shops', 'totalShops'));
     }
@@ -59,9 +69,6 @@ class ShopController extends Controller
         return view('admin.shops.show', compact('shop', 'rentals', 'vehicles', 'stats'));
     }
 
-    /**
-     * Get shop details as HTML partial for dashboard
-     */
     /**
      * Get shop details as HTML partial for dashboard
      */
