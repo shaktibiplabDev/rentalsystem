@@ -86,11 +86,34 @@
             margin-bottom: 16px;
             text-align: center;
         }
+        .success {
+            background: rgba(31,207,170,0.15);
+            border: 1px solid rgba(31,207,170,0.3);
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 12px;
+            color: #1fcfaa;
+            margin-bottom: 16px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
     <div class="login-card">
         <div class="logo">RENT·AI</div>
+        
+        @if(session('error'))
+        <div class="error">{{ session('error') }}</div>
+        @endif
+        
+        @if(session('success'))
+        <div class="success">{{ session('success') }}</div>
+        @endif
+        
+        @if($errors->any())
+        <div class="error">{{ $errors->first() }}</div>
+        @endif
+        
         <form method="POST" action="{{ route('admin.login') }}">
             @csrf
             <div class="input-group">
@@ -101,9 +124,6 @@
                 <label>Password</label>
                 <input type="password" name="password" required>
             </div>
-            @if($errors->any())
-                <div class="error">{{ $errors->first() }}</div>
-            @endif
             <button type="submit">Sign in</button>
         </form>
     </div>
