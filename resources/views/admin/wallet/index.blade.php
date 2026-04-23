@@ -5,8 +5,7 @@
     <div class="wallet-page">
         <div class="wallet-left">
             <div class="wallet-metrics">
-                <div class="mcard"><div class="ml">Total Credits</div><div class="mv mv-green">₹{{ number_format($totalCredits,2) }}</div></div>
-                <div class="mcard"><div class="ml">Total Debits</div><div class="mv mv-amber">₹{{ number_format($totalDebits,2) }}</div></div>
+                <div class="mcard"><div class="ml">Total Credits</div><div class="mv mv-green">₹{{ number_format($totalDebits,2) }}</div></div>
                 <div class="mcard"><div class="ml">Platform Revenue</div><div class="mv mv-accent">₹{{ number_format($platformRevenue,2) }}</div></div>
             </div>
             <div class="panel">

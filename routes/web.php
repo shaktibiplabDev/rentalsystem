@@ -60,6 +60,7 @@ use App\Http\Controllers\Admin\ShopController;
 use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\WalletController;
 use App\Http\Controllers\Admin\MapController;
+use App\Http\Controllers\Admin\SearchController;
 
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     // Dashboard
@@ -67,6 +68,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     
     // Shop details for AJAX (MUST come before resource routes)
     Route::get('/shops/{id}/details', [ShopController::class, 'details'])->name('shops.details');
+    Route::get('/search', [SearchController::class, 'globalSearch'])->name('admin.search');
 
     // Shop management (users with role 'user')
     Route::resource('shops', ShopController::class)->only(['index', 'show']);
