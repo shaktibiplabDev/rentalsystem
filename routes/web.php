@@ -110,3 +110,12 @@ Route::post('/logout', function (Request $request) {
 
     return redirect('/admin/login');
 })->name('logout');
+
+Route::get('/clear-cache', function() {
+    Artisan::call('config:clear');
+    Artisan::call('cache:clear');
+    Artisan::call('view:clear');
+    Artisan::call('route:clear');
+    Artisan::call('optimize:clear');
+    return 'All caches cleared!';
+});
