@@ -5,10 +5,10 @@
     <div class="tb-spacer"></div>
     
     <!-- Smart Search Box -->
-    <div class="search-box" style="position: relative;">
+    <div class="search-box" style="position: relative; z-index: 10000;">
         <i class="fas fa-search"></i>
         <input type="text" id="globalSearch" placeholder="Search shops, customers, rentals..." autocomplete="off">
-        <div id="searchResults" class="search-results-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; z-index: 1000; max-height: 400px; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.5);"></div>
+        <div id="searchResults" class="search-results-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; z-index: 9999; max-height: 400px; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.5);"></div>
     </div>
     
     <div class="tb-pill">
@@ -29,6 +29,16 @@
     background: rgba(240, 68, 90, 0.25) !important;
     border-color: rgba(240, 68, 90, 0.5) !important;
     transform: scale(1.02);
+}
+
+/* Fix: Ensure search box appears above map */
+.search-box {
+    position: relative;
+    z-index: 10000 !important;
+}
+
+.search-results-dropdown {
+    z-index: 9999 !important;
 }
 
 .search-results-dropdown::-webkit-scrollbar {
