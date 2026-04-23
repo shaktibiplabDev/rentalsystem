@@ -14,7 +14,7 @@
                         </div>
                     </div>
                     <div class="profile-name">{{ auth()->user()->name ?? 'Admin' }}</div>
-                    <div class="profile-role">Super Admin · RENT·AI Platform</div>
+                    <div class="profile-role">Super Admin · EKiraya Platform</div>
                     <div class="profile-stats">
                         <div class="ps-item">
                             <div class="ps-v" style="color: var(--accent);">{{ $totalShops }}</div>

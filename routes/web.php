@@ -111,3 +111,20 @@ Route::post('/logout', function (Request $request) {
     return redirect('/admin/login');
 })->name('logout');
 
+Route::get('/privacy-policy', function () {
+    return view('privacy');
+})->name('privacy.policy');
+
+Route::get('/terms-of-service', function () {
+    return view('terms');
+})->name('terms.service');
+
+Route::get('/contact', function () {
+    return view('contact');
+})->name('contact');
+
+Route::post('/contact', function (Request $request) {
+    // Here you can send email notification, save to database, etc.
+    return redirect()->back()->with('success', 'Thank you for reaching out. We will get back to you soon!');
+})->name('contact.submit');
+

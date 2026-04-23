@@ -1,5 +1,5 @@
 <header class="topbar">
-    <span class="brand">RENT·AI</span>
+    <span class="brand">EKiraya</span>
     <div class="tb-div"></div>
     <span class="page-title" id="pageTitle">Dashboard</span>
     <div class="tb-spacer"></div>

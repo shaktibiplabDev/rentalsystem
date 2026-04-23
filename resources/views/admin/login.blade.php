@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login | RENT·AI</title>
+    <title>Admin Login | EKiraya</title>
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
@@ -100,7 +100,7 @@
 </head>
 <body>
     <div class="login-card">
-        <div class="logo">RENT·AI</div>
+        <div class="logo">EKiraya</div>
         
         @if(session('error'))
         <div class="error">{{ session('error') }}</div>
