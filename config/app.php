@@ -1,7 +1,5 @@
 <?php
 
-use App\Providers\ViewServiceProvider;
-
 return [
 
     /*
@@ -124,9 +122,6 @@ return [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
+    
 
-    'providers' => [
-        // ... other providers
-        ViewServiceProvider::class,
-    ],
 ];
