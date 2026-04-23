@@ -18,7 +18,10 @@ class ShopController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(20);
 
-        return view('admin.shops.index', compact('shops'));
+        $totalShops = User::where('role', 'user')->count();
+        $shops = User::where('role', 'user')->withCount(['rentals', 'vehicles'])->paginate(20);
+
+        return view('admin.shops.index', compact('shops', 'totalShops'));
     }
 
     public function show($id)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Rental;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class RentalController extends Controller
@@ -11,6 +12,7 @@ class RentalController extends Controller
     public function index(Request $request)
     {
         $query = Rental::with(['user', 'vehicle', 'customer']);
+        $totalShops = User::where('role', 'user')->count();
         
         // Filter by status
         if ($request->status) {
@@ -45,7 +47,7 @@ class RentalController extends Controller
                 ->sum(fn($r) => $r->is_verification_cached ? 3 : 1),
         ];
         
-        return view('admin.rentals.index', compact('rentals', 'summary'));
+        return view('admin.rentals.index', compact('rentals', 'summary', 'totalShops'));
     }
     
     public function show($id)

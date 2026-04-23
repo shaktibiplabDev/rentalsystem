@@ -11,6 +11,7 @@ class WalletController extends Controller
 {
     public function index()
     {
+        $totalShops = User::where('role', 'user')->count();
         $shops = User::where('role', 'owner')
             ->select('id', 'name', 'wallet_balance')
             ->orderBy('wallet_balance', 'desc')
@@ -37,7 +38,7 @@ class WalletController extends Controller
             ->get()
             ->sum(fn($r) => $r->is_verification_cached ? 3 : 1);
         
-        return view('admin.wallet.index', compact('shops', 'transactions', 'totalCredits', 'totalDebits', 'platformRevenue'));
+        return view('admin.wallet.index', compact('shops', 'transactions', 'totalCredits', 'totalDebits', 'platformRevenue', 'totalShops'));
     }
     
     public function addBalance(Request $request, $shopId)

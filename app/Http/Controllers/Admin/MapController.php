@@ -16,6 +16,9 @@ class MapController extends Controller
             ->select('id', 'name', 'wallet_balance', 'latitude', 'longitude', 'business_display_address', 'business_phone', 'business_email')
             ->get();
 
-        return view('admin.map', compact('shops'));
+        $totalShops = User::where('role', 'user')->count();
+        $shops = User::where('role', 'user')->whereNotNull('latitude')->get();
+
+        return view('admin.map', compact('shops', 'totalShops'));
     }
 }
