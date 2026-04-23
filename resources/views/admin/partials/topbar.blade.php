@@ -17,12 +17,20 @@
     </div>
     
     <form method="POST" action="{{ route('logout') }}" id="logout-form" style="display:none;">@csrf</form>
-    <div class="nav-avatar" onclick="document.getElementById('logout-form').submit();" style="cursor:pointer; margin-left:8px;">
-        {{ substr(auth()->user()->name ?? 'AD', 0, 2) }}
-    </div>
+    
+    <!-- Red Cross Logout Button -->
+    <button onclick="document.getElementById('logout-form').submit();" class="logout-btn" title="Logout" style="background: rgba(240, 68, 90, 0.15); border: 1px solid rgba(240, 68, 90, 0.3); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; margin-left: 8px;">
+        <i class="fas fa-times" style="color: #f0445a; font-size: 14px;"></i>
+    </button>
 </header>
 
 <style>
+.logout-btn:hover {
+    background: rgba(240, 68, 90, 0.25) !important;
+    border-color: rgba(240, 68, 90, 0.5) !important;
+    transform: scale(1.02);
+}
+
 .search-results-dropdown::-webkit-scrollbar {
     width: 4px;
 }
