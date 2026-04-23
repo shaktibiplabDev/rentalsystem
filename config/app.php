@@ -1,5 +1,7 @@
 <?php
 
+use App\Providers\ViewServiceProvider;
+
 return [
 
     /*
@@ -123,4 +125,8 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'providers' => [
+        // ... other providers
+        ViewServiceProvider::class,
+    ],
 ];
