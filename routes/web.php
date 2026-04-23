@@ -62,7 +62,7 @@ use App\Http\Controllers\Admin\WalletController;
 use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\Admin\SearchController;
 
-Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['admin'])->prefix('admin')->name('admin.')->group(function () {
     // Dashboard
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     
