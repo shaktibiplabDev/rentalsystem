@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\Web\EmailVerificationController;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
