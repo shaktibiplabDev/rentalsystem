@@ -33,7 +33,7 @@ class DashboardController extends Controller
             $shop->fleet_vehicles = Vehicle::where('user_id', $shop->id)->get();
         }
         
-        // Platform totals (ONLY platform revenue from verifications)
+        // Platform totals
         $totalShops = $shops->count();
         $totalWallet = $shops->sum('wallet_balance');
         $totalRentals = Rental::count();
@@ -50,7 +50,7 @@ class DashboardController extends Controller
         $availableVehicles = Vehicle::where('status', 'available')->count();
         $onRentVehicles = Vehicle::where('status', 'on_rent')->count();
         
-        // Growth in platform revenue (not shop earnings)
+        // Growth in platform revenue
         $last30DaysRevenue = Rental::where('created_at', '>=', Carbon::now()->subDays(30))
             ->get()
             ->sum(function($r) {
@@ -78,10 +78,21 @@ class DashboardController extends Controller
         $selectedShop = $shops->first();
         
         return view('admin.dashboard', compact(
-            'shops', 'selectedShop', 'totalShops', 'totalWallet', 'totalRentals',
-            'activeRentals', 'platformRevenue', 'totalVerifications',
-            'freshVerifications', 'cachedVerifications', 'totalVehicles',
-            'availableVehicles', 'onRentVehicles', 'growth', 'topCustomers'
+            'shops', 
+            'selectedShop', 
+            'totalShops', 
+            'totalWallet', 
+            'totalRentals',
+            'activeRentals', 
+            'platformRevenue', 
+            'totalVerifications',
+            'freshVerifications', 
+            'cachedVerifications', 
+            'totalVehicles',
+            'availableVehicles', 
+            'onRentVehicles', 
+            'growth', 
+            'topCustomers'
         ));
     }
 }
