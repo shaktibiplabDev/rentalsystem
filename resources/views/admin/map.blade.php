@@ -147,7 +147,7 @@
                                 className: ''
                             })
                         }).bindPopup(`
-                            <div style="font-family: \'Syne\', sans-serif; min-width: 200px;">
+                            <div style="font-family: 'Syne', sans-serif; min-width: 200px;">
                                 <strong style="font-size: 14px;">${escapeHtml(shop.name)}</strong><br>
                                 💰 Wallet: ₹${(shop.wallet_balance || 0).toLocaleString()}<br>
                                 📍 ${escapeHtml(shop.business_display_address || 'Address not set')}<br>
@@ -292,10 +292,8 @@
             row.addEventListener('click', function() {
                 var lat = parseFloat(this.dataset.lat);
                 var lng = parseFloat(this.dataset.lng);
-                var name = this.dataset.name;
                 if (!isNaN(lat) && !isNaN(lng)) {
                     map.setView([lat, lng], 12);
-                    // Also open popup for this shop
                     if (shopMarkersLayer) {
                         shopMarkersLayer.eachLayer(function(layer) {
                             if (layer.getLatLng().lat === lat && layer.getLatLng().lng === lng) {
@@ -312,5 +310,105 @@
             setTimeout(function() { map.invalidateSize(); }, 100);
         });
     });
+</script>
+
+<!-- Search Script for Map Page -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('globalSearch');
+    const resultsContainer = document.getElementById('searchResults');
+    let searchTimeout;
+    
+    if (!searchInput) return;
+    
+    searchInput.addEventListener('input', function(e) {
+        const query = e.target.value.trim();
+        
+        clearTimeout(searchTimeout);
+        
+        if (query.length < 2) {
+            resultsContainer.style.display = 'none';
+            return;
+        }
+        
+        searchTimeout = setTimeout(() => {
+            fetch(`/admin/search?q=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    let html = '';
+                    
+                    if (data.shops && data.shops.length > 0) {
+                        html += `<div class="search-section-title">SHOPS (${data.shops.length})</div>`;
+                        data.shops.forEach(shop => {
+                            html += `<div class="search-result-item" onclick="window.location.href='/admin/shops/${shop.id}'">
+                                <div class="search-result-icon shops"><i class="fas fa-store-alt"></i></div>
+                                <div class="search-result-info">
+                                    <div class="search-result-title">${escapeHtml(shop.name)}</div>
+                                    <div class="search-result-subtitle">${escapeHtml(shop.email || shop.phone || 'No contact')}</div>
+                                </div>
+                                <div class="search-result-type">Shop</div>
+                            </div>`;
+                        });
+                    }
+                    
+                    if (data.customers && data.customers.length > 0) {
+                        html += `<div class="search-section-title">CUSTOMERS (${data.customers.length})</div>`;
+                        data.customers.forEach(customer => {
+                            html += `<div class="search-result-item" onclick="window.location.href='/admin/customers/${customer.id}'">
+                                <div class="search-result-icon customers"><i class="fas fa-users"></i></div>
+                                <div class="search-result-info">
+                                    <div class="search-result-title">${escapeHtml(customer.name)}</div>
+                                    <div class="search-result-subtitle">${escapeHtml(customer.phone || customer.address || 'No details')}</div>
+                                </div>
+                                <div class="search-result-type">Customer</div>
+                            </div>`;
+                        });
+                    }
+                    
+                    if (data.rentals && data.rentals.length > 0) {
+                        html += `<div class="search-section-title">RENTALS (${data.rentals.length})</div>`;
+                        data.rentals.forEach(rental => {
+                            html += `<div class="search-result-item" onclick="window.location.href='/admin/rentals/${rental.id}'">
+                                <div class="search-result-icon rentals"><i class="fas fa-receipt"></i></div>
+                                <div class="search-result-info">
+                                    <div class="search-result-title">#${rental.id} - ${escapeHtml(rental.vehicle_name)}</div>
+                                    <div class="search-result-subtitle">Customer: ${escapeHtml(rental.customer_name)}</div>
+                                </div>
+                                <div class="search-result-type">Rental</div>
+                            </div>`;
+                        });
+                    }
+                    
+                    if (!html) {
+                        html = `<div class="search-no-results">No results found for "${escapeHtml(query)}"</div>`;
+                    }
+                    
+                    resultsContainer.innerHTML = html;
+                    resultsContainer.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Search failed:', error);
+                    resultsContainer.innerHTML = '<div class="search-no-results">Search error. Please try again.</div>';
+                    resultsContainer.style.display = 'block';
+                });
+        }, 300);
+    });
+    
+    document.addEventListener('click', function(e) {
+        if (!searchInput.contains(e.target) && !resultsContainer.contains(e.target)) {
+            resultsContainer.style.display = 'none';
+        }
+    });
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+});
 </script>
 @endpush
