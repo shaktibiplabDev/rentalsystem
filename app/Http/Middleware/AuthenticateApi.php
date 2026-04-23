@@ -18,7 +18,12 @@ class AuthenticateApi extends BaseAuthenticate
             return null;
         }
         
-        // For web requests, redirect to login
+        // For admin routes, redirect to admin login
+        if ($request->is('admin') || $request->is('admin/*')) {
+            return route('admin.login');
+        }
+        
+        // For other web requests, redirect to home/login
         return route('login');
     }
 }
