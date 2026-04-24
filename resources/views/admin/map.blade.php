@@ -101,6 +101,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        if (typeof L === 'undefined') {
+            console.error('Leaflet not loaded.');
+            return;
+        }
+
         // Initialize map - center on India
         var map = L.map('leafletMap').setView([20.5937, 78.9629], 5);
         
@@ -114,6 +119,20 @@
         var shopMarkersLayer = null;
         var territoryLayer = null;
         var currentRadius = 25;
+
+        function getValidShopCoords() {
+            var coords = [];
+            shops.forEach(function(shop) {
+                if (shop.latitude && shop.longitude) {
+                    var lat = parseFloat(shop.latitude);
+                    var lng = parseFloat(shop.longitude);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        coords.push({ lat: lat, lng: lng, shop: shop });
+                    }
+                }
+            });
+            return coords;
+        }
         
         // Layer visibility states
         var layerState = {
@@ -135,45 +154,67 @@
         // Create shop markers
         function createShopMarkers() {
             var group = L.layerGroup();
-            shops.forEach(function(shop) {
-                if (shop.latitude && shop.longitude) {
-                    var lat = parseFloat(shop.latitude);
-                    var lng = parseFloat(shop.longitude);
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        var marker = L.marker([lat, lng], {
-                            icon: L.divIcon({
-                                html: '<div style="background: #4f6ef7; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fas fa-store" style="color: white; font-size: 12px;"></i></div>',
-                                iconSize: [28, 28],
-                                className: ''
-                            })
-                        }).bindPopup(`
-                            <div style="font-family: 'Syne', sans-serif; min-width: 200px;">
-                                <strong style="font-size: 14px;">${escapeHtml(shop.name)}</strong><br>
-                                💰 Wallet: ₹${(shop.wallet_balance || 0).toLocaleString()}<br>
-                                📍 ${escapeHtml(shop.business_display_address || 'Address not set')}<br>
-                                ${shop.business_phone ? '📞 ' + shop.business_phone : ''}
-                            </div>
-                        `);
-                        marker.addTo(group);
-                    }
-                }
+            getValidShopCoords().forEach(function(entry) {
+                var shop = entry.shop;
+                var marker = L.marker([entry.lat, entry.lng], {
+                    icon: L.divIcon({
+                        html: '<div style="background: #4f6ef7; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><i class="fas fa-store" style="color: white; font-size: 12px;"></i></div>',
+                        iconSize: [28, 28],
+                        className: ''
+                    })
+                }).bindPopup(`
+                    <div style="font-family: 'Syne', sans-serif; min-width: 200px;">
+                        <strong style="font-size: 14px;">${escapeHtml(shop.name)}</strong><br>
+                        💰 Wallet: ₹${Number(shop.wallet_balance || 0).toLocaleString()}<br>
+                        📍 ${escapeHtml(shop.business_display_address || 'Address not set')}<br>
+                        ${shop.business_phone ? '📞 ' + shop.business_phone : ''}
+                    </div>
+                `);
+                marker.addTo(group);
+            });
+            return group;
+        }
+
+        // Fallback territory rendering if Turf union fails or is unavailable.
+        function createTerritoryFallback(radius) {
+            var group = L.layerGroup();
+            getValidShopCoords().forEach(function(entry) {
+                L.circle([entry.lat, entry.lng], {
+                    radius: radius * 1000,
+                    color: '#1fcfaa',
+                    fillColor: '#1fcfaa',
+                    fillOpacity: 0.06,
+                    weight: 1,
+                    opacity: 0.45,
+                    dashArray: '5, 5',
+                    interactive: false
+                }).addTo(group);
             });
             return group;
         }
         
         // Create territory union using Turf.js
         function createTerritoryUnion(radius) {
-            var points = [];
-            shops.forEach(function(shop) {
-                if (shop.latitude && shop.longitude) {
-                    points.push(turf.point([parseFloat(shop.longitude), parseFloat(shop.latitude)]));
-                }
+            var coords = getValidShopCoords();
+            var points = coords.map(function(entry) {
+                return turf.point([entry.lng, entry.lat]);
             });
             
             if (points.length < 2) return null;
+
+            if (typeof turf === 'undefined') {
+                console.warn('Turf is unavailable. Rendering fallback territory.');
+                return createTerritoryFallback(radius);
+            }
             
             // Create buffers around each point
-            var buffers = points.map(point => turf.buffer(point, radius, { units: 'kilometers' }));
+            var buffers = points.map(function(point) {
+                return turf.buffer(point, radius, { units: 'kilometers' });
+            });
+
+            if (!buffers.length) {
+                return createTerritoryFallback(radius);
+            }
             
             // Union all buffers
             var union = buffers[0];
@@ -181,11 +222,13 @@
                 try {
                     union = turf.union(union, buffers[i]);
                 } catch(e) {
-                    console.warn('Union failed for buffer', i);
+                    console.warn('Union failed for buffer', i, e);
                 }
             }
             
-            if (!union) return null;
+            if (!union) {
+                return createTerritoryFallback(radius);
+            }
             
             return L.geoJSON(union, {
                 style: {
@@ -213,17 +256,15 @@
         }
         
         // Initialize layers if shops exist
-        if (shops.length > 0) {
+        if (getValidShopCoords().length > 0) {
             shopMarkersLayer = createShopMarkers();
             territoryLayer = createTerritoryUnion(currentRadius);
             applyLayerVisibility();
             
             // Fit map to show all markers
             var bounds = L.latLngBounds([]);
-            shops.forEach(function(shop) {
-                if (shop.latitude && shop.longitude) {
-                    bounds.extend([parseFloat(shop.latitude), parseFloat(shop.longitude)]);
-                }
+            getValidShopCoords().forEach(function(entry) {
+                bounds.extend([entry.lat, entry.lng]);
             });
             if (bounds.isValid()) {
                 map.fitBounds(bounds.pad(0.2));
@@ -256,7 +297,7 @@
                 }
                 
                 if (layer === 'territory') {
-                    if (layerState.territory && shops.length > 0) {
+                    if (layerState.territory && getValidShopCoords().length > 0) {
                         if (territoryLayer) map.removeLayer(territoryLayer);
                         territoryLayer = createTerritoryUnion(currentRadius);
                         if (territoryLayer) territoryLayer.addTo(map);
@@ -272,7 +313,7 @@
         // Radius selector change
         document.getElementById('radiusSelect').addEventListener('change', function(e) {
             currentRadius = parseInt(e.target.value);
-            if (layerState.territory && shops.length > 0) {
+            if (layerState.territory && getValidShopCoords().length > 0) {
                 if (territoryLayer) map.removeLayer(territoryLayer);
                 territoryLayer = createTerritoryUnion(currentRadius);
                 if (territoryLayer) territoryLayer.addTo(map);
@@ -296,7 +337,8 @@
                     map.setView([lat, lng], 12);
                     if (shopMarkersLayer) {
                         shopMarkersLayer.eachLayer(function(layer) {
-                            if (layer.getLatLng().lat === lat && layer.getLatLng().lng === lng) {
+                            var ll = layer.getLatLng();
+                            if (Math.abs(ll.lat - lat) < 0.00001 && Math.abs(ll.lng - lng) < 0.00001) {
                                 layer.openPopup();
                             }
                         });
