@@ -1162,7 +1162,6 @@
                 @foreach($footerPages as $page)
                     <a href="{{ route('legal.page', $page->slug) }}">{{ $page->title }}</a>
                 @endforeach
-                <a href="#">Help Center</a>
             </div>
             <div class="footer-col">
                 <h4>Contact</h4>
