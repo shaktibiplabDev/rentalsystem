@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\LandingController;
+use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\Web\EmailVerificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +41,11 @@ Route::get('/media/{path}', function (string $path) {
 })->where('path', '.*')->name('media.public');
 
 // =============================================
+// LEGAL PAGES (Database driven)
+// =============================================
+Route::get('/legal/{slug}', [LegalPageController::class, 'show'])->name('legal.page');
+
+// =============================================
 // ADMIN AUTHENTICATION (NO MIDDLEWARE)
 // =============================================
 Route::prefix('admin')->name('admin.')->group(function () {
@@ -49,7 +55,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 });
 
 // =============================================
-// ADMIN WEB ROUTES (protected by auth + admin middleware)
+// ADMIN WEB ROUTES (protected by admin middleware)
 // =============================================
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
@@ -61,6 +67,7 @@ use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\WalletController;
 use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\Admin\SearchController;
+use App\Http\Controllers\Admin\LegalPageController as AdminLegalPageController;
 
 Route::middleware(['admin'])->prefix('admin')->name('admin.')->group(function () {
     // Dashboard
@@ -98,6 +105,11 @@ Route::middleware(['admin'])->prefix('admin')->name('admin.')->group(function ()
     
     // Profile
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
+    
+    // Legal Pages Management (CRUD)
+    Route::resource('legal-pages', AdminLegalPageController::class);
+    Route::delete('legal-pages/{id}', [AdminLegalPageController::class, 'destroy'])->name('legal-pages.destroy');
+    Route::post('legal-pages/{id}/toggle', [AdminLegalPageController::class, 'toggleStatus'])->name('legal-pages.toggle');
 });
 
 // =============================================
@@ -110,21 +122,3 @@ Route::post('/logout', function (Request $request) {
 
     return redirect('/admin/login');
 })->name('logout');
-
-Route::get('/privacy-policy', function () {
-    return view('privacy');
-})->name('privacy.policy');
-
-Route::get('/terms-of-service', function () {
-    return view('terms');
-})->name('terms.service');
-
-Route::get('/contact', function () {
-    return view('contact');
-})->name('contact');
-
-Route::post('/contact', function (Request $request) {
-    // Here you can send email notification, save to database, etc.
-    return redirect()->back()->with('success', 'Thank you for reaching out. We will get back to you soon!');
-})->name('contact.submit');
-

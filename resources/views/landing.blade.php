@@ -6,6 +6,12 @@
     <title>EKiraya – Smart Vehicle Rental Management</title>
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    @php
+        $footerPages = \App\Models\LegalPage::where('is_active', true)
+            ->where('show_in_footer', true)
+            ->orderBy('order')
+            ->get();
+    @endphp
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -470,9 +476,9 @@
             <div class="footer-col">
                 <h4>Support</h4>
                 <a href="{{ route('contact') }}">Contact Us</a>
-                <a href="{{ route('privacy.policy') }}">Privacy Policy</a>
-                <a href="{{ route('terms.service') }}">Terms of Service</a>
-                <a href="#">FAQ</a>
+                @foreach($footerPages as $page)
+                <a href="{{ route('legal.page', $page->slug) }}">{{ $page->title }}</a>
+                @endforeach
             </div>
             <div class="footer-col">
                 <h4>Contact</h4>
