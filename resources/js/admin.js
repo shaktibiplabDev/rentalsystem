@@ -2,6 +2,7 @@
 
 const API_BASE = window.Laravel.apiBase;
 const csrfToken = window.Laravel.csrfToken;
+const IS_ADMIN_MAP_PAGE = window.location.pathname === '/admin/map';
 
 async function apiFetch(endpoint, options = {}) {
     const headers = {
@@ -186,4 +187,8 @@ function escapeHtml(str) {
     });
 }
 
-loadDashboardData();
+// The dedicated admin map page has its own Blade-driven map script and controls.
+// Skip dashboard bootstrap there to avoid map/container/script conflicts.
+if (!IS_ADMIN_MAP_PAGE) {
+    loadDashboardData();
+}

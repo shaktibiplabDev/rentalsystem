@@ -17,7 +17,6 @@ class MapController extends Controller
             ->get();
 
         $totalShops = User::where('role', 'user')->count();
-        $shops = User::where('role', 'user')->whereNotNull('latitude')->get();
 
         return view('admin.map', compact('shops', 'totalShops'));
     }

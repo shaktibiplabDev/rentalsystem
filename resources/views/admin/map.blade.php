@@ -99,8 +99,18 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script id="shops-data-json" type="application/json">
+@json($shops, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)
+</script>
 <script>
+    // Capture very-early script failures.
+    window.addEventListener('error', function(e) {
+        console.error('Map page JS error:', e.message, e.filename, e.lineno);
+    });
+
     document.addEventListener('DOMContentLoaded', function() {
+        try {
         if (typeof L === 'undefined') {
             console.error('Leaflet not loaded.');
             return;
@@ -114,18 +124,40 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
         }).addTo(map);
         
-        // Data from Laravel
-        var shops = @json($shops);
+        // Data from Laravel (safe JSON parsing to avoid inline-script breakage).
+        var shopsRaw = [];
+        try {
+            var shopsJsonEl = document.getElementById('shops-data-json');
+            shopsRaw = shopsJsonEl ? JSON.parse(shopsJsonEl.textContent || '[]') : [];
+        } catch (jsonErr) {
+            console.error('Failed to parse shops JSON:', jsonErr);
+            shopsRaw = [];
+        }
+        var shops = Array.isArray(shopsRaw) ? shopsRaw : Object.values(shopsRaw || {});
         var shopMarkersLayer = null;
         var territoryLayer = null;
         var currentRadius = 25;
+        var debugBox = null;
+
+        function mountDebugBox() {
+            debugBox = document.createElement('div');
+            debugBox.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(7,11,24,0.9);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px 8px;font-size:10px;font-family:monospace;color:#9bb4d6;pointer-events:none;';
+            document.querySelector('.map-wrap').appendChild(debugBox);
+        }
+
+        function setDebug(text) {
+            if (!debugBox) return;
+            debugBox.textContent = text;
+        }
 
         function getValidShopCoords() {
             var coords = [];
             shops.forEach(function(shop) {
-                if (shop.latitude && shop.longitude) {
-                    var lat = parseFloat(shop.latitude);
-                    var lng = parseFloat(shop.longitude);
+                var latRaw = shop.latitude ?? shop.lat;
+                var lngRaw = shop.longitude ?? shop.lng;
+                if (latRaw !== null && latRaw !== undefined && lngRaw !== null && lngRaw !== undefined) {
+                    var lat = parseFloat(latRaw);
+                    var lng = parseFloat(lngRaw);
                     if (!isNaN(lat) && !isNaN(lng)) {
                         coords.push({ lat: lat, lng: lng, shop: shop });
                     }
@@ -175,72 +207,236 @@
             return group;
         }
 
-        // Fallback territory rendering if Turf union fails or is unavailable.
+        // Fallback polygon territory (convex-like) when geometric union is unavailable.
         function createTerritoryFallback(radius) {
-            var group = L.layerGroup();
-            getValidShopCoords().forEach(function(entry) {
-                L.circle([entry.lat, entry.lng], {
-                    radius: radius * 1000,
+            var coords = getValidShopCoords();
+            if (!coords.length) return null;
+
+            // 1 point: create a diamond polygon around the shop.
+            if (coords.length === 1) {
+                var c = coords[0];
+                var dLat = Math.max(0.05, radius / 111); // km -> deg (approx)
+                var dLng = Math.max(0.05, radius / (111 * Math.cos(c.lat * Math.PI / 180)));
+                return L.polygon([
+                    [c.lat + dLat, c.lng],
+                    [c.lat, c.lng + dLng],
+                    [c.lat - dLat, c.lng],
+                    [c.lat, c.lng - dLng],
+                ], {
                     color: '#1fcfaa',
                     fillColor: '#1fcfaa',
-                    fillOpacity: 0.06,
-                    weight: 1,
-                    opacity: 0.45,
-                    dashArray: '5, 5',
+                    fillOpacity: 0.2,
+                    weight: 2,
+                    opacity: 0.95,
+                    dashArray: '6, 5',
                     interactive: false
-                }).addTo(group);
+                });
+            }
+
+            // >=2 points: convex hull polygon (monotonic chain).
+            var points = coords.map(function(p) { return { x: p.lng, y: p.lat }; });
+            points.sort(function(a, b) {
+                return a.x === b.x ? a.y - b.y : a.x - b.x;
             });
-            return group;
+
+            function cross(o, a, b) {
+                return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+            }
+
+            var lower = [];
+            for (var i = 0; i < points.length; i++) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], points[i]) <= 0) {
+                    lower.pop();
+                }
+                lower.push(points[i]);
+            }
+
+            var upper = [];
+            for (var j = points.length - 1; j >= 0; j--) {
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], points[j]) <= 0) {
+                    upper.pop();
+                }
+                upper.push(points[j]);
+            }
+
+            upper.pop();
+            lower.pop();
+            var hull = lower.concat(upper);
+            if (hull.length < 3) {
+                // Degenerate 2-point case: light rectangle-ish polygon.
+                var a = coords[0], b = coords[1];
+                var d = Math.max(0.03, radius / 180);
+                return L.polygon([
+                    [a.lat + d, a.lng + d],
+                    [b.lat + d, b.lng + d],
+                    [b.lat - d, b.lng - d],
+                    [a.lat - d, a.lng - d],
+                ], {
+                    color: '#1fcfaa',
+                    fillColor: '#1fcfaa',
+                    fillOpacity: 0.2,
+                    weight: 2,
+                    opacity: 0.95,
+                    dashArray: '6, 5',
+                    interactive: false
+                });
+            }
+
+            var latLngs = hull.map(function(p) { return [p.y, p.x]; });
+            return L.polygon(latLngs, {
+                color: '#1fcfaa',
+                fillColor: '#1fcfaa',
+                fillOpacity: 0.2,
+                weight: 2,
+                opacity: 0.95,
+                dashArray: '6, 5',
+                interactive: false
+            });
+        }
+
+        // Create a geodesic-like circle polygon around a lat/lng.
+        function circlePolygonLngLat(lat, lng, radiusKm, steps) {
+            var points = [];
+            var latRad = lat * Math.PI / 180;
+            var kmPerDegLat = 111.32;
+            var kmPerDegLng = Math.max(0.000001, 111.32 * Math.cos(latRad));
+            for (var i = 0; i <= steps; i++) {
+                var t = (i / steps) * Math.PI * 2;
+                var dLat = (radiusKm / kmPerDegLat) * Math.sin(t);
+                var dLng = (radiusKm / kmPerDegLng) * Math.cos(t);
+                points.push([lng + dLng, lat + dLat]); // [lng, lat]
+            }
+            return [points]; // Polygon rings
+        }
+
+        // True "merged circles" territory: union of shop-radius circles.
+        function createMergedCircleTerritory(radius) {
+            var coords = getValidShopCoords();
+            if (!coords.length) return null;
+
+            if (typeof polygonClipping === 'undefined' || typeof polygonClipping.union !== 'function') {
+                console.warn('polygon-clipping unavailable; using fallback territory.');
+                return createTerritoryFallback(radius);
+            }
+
+            var steps = 56; // smoother circle boundary
+            var merged = null;
+
+            for (var i = 0; i < coords.length; i++) {
+                var c = coords[i];
+                var circlePoly = [circlePolygonLngLat(c.lat, c.lng, radius, steps)]; // MultiPolygon
+                try {
+                    merged = merged ? polygonClipping.union(merged, circlePoly) : circlePoly;
+                } catch (e) {
+                    console.warn('Circle union failed at index', i, e);
+                }
+            }
+
+            if (!merged || !merged.length) {
+                return createTerritoryFallback(radius);
+            }
+
+            return L.geoJSON({
+                type: 'Feature',
+                geometry: {
+                    type: 'MultiPolygon',
+                    coordinates: merged
+                },
+                properties: {}
+            }, {
+                style: {
+                    color: '#1fcfaa',
+                    fillColor: '#1fcfaa',
+                    fillOpacity: 0.2,
+                    weight: 2,
+                    opacity: 0.95,
+                    dashArray: '6, 5'
+                },
+                interactive: false
+            });
         }
         
-        // Create territory union using Turf.js
+        // Create merged-circle territory polygon (primary), with fallback if needed.
         function createTerritoryUnion(radius) {
             var coords = getValidShopCoords();
-            var points = coords.map(function(entry) {
-                return turf.point([entry.lng, entry.lat]);
-            });
-            
-            if (points.length < 2) return null;
+            if (coords.length < 1) return null;
+
+            var mergedCircleLayer = createMergedCircleTerritory(radius);
+            if (mergedCircleLayer) {
+                return mergedCircleLayer;
+            }
 
             if (typeof turf === 'undefined') {
                 console.warn('Turf is unavailable. Rendering fallback territory.');
                 return createTerritoryFallback(radius);
             }
-            
-            // Create buffers around each point
-            var buffers = points.map(function(point) {
-                return turf.buffer(point, radius, { units: 'kilometers' });
+
+            // Turf API compatibility (some bundles expose helpers under turf.helpers).
+            var turfPoint = turf.point || (turf.helpers && turf.helpers.point);
+            var turfBuffer = turf.buffer;
+            var turfConvex = turf.convex;
+            var turfFeatureCollection = turf.featureCollection;
+
+            if (!turfPoint || !turfBuffer || !turfConvex || !turfFeatureCollection) {
+                console.warn('Turf API incomplete. Rendering polygon fallback territory.');
+                return createTerritoryFallback(radius);
+            }
+
+            var points = coords.map(function(entry) {
+                return turfPoint([entry.lng, entry.lat]);
             });
 
-            if (!buffers.length) {
-                return createTerritoryFallback(radius);
-            }
-            
-            // Union all buffers
-            var union = buffers[0];
-            for (var i = 1; i < buffers.length; i++) {
-                try {
-                    union = turf.union(union, buffers[i]);
-                } catch(e) {
-                    console.warn('Union failed for buffer', i, e);
-                }
-            }
-            
-            if (!union) {
-                return createTerritoryFallback(radius);
-            }
-            
-            return L.geoJSON(union, {
-                style: {
-                    color: '#1fcfaa',
+            try {
+                // For larger datasets, avoid expensive iterative union.
+                if (points.length > 12) {
+                    var fc = turfFeatureCollection(points);
+                    var hull = turfConvex(fc);
+
+                    if (hull) {
+                        var hullBuffered = turfBuffer(hull, radius, { units: 'kilometers' });
+                        return L.geoJSON(hullBuffered, {
+                            style: {
+                                color: '#1fcfaa',
                     fillColor: '#1fcfaa',
-                    fillOpacity: 0.08,
-                    weight: 1.5,
-                    opacity: 0.6,
+                    fillOpacity: 0.2,
+                    weight: 2,
+                    opacity: 0.95,
                     dashArray: '6, 5'
                 },
                 interactive: false
             });
+        }
+
+                    return createTerritoryFallback(radius);
+                }
+
+                // Small set: build hull and buffer it. No union dependency.
+                var fcSmall = turfFeatureCollection(points);
+                var hullSmall = turfConvex(fcSmall);
+                if (!hullSmall) {
+                    return createTerritoryFallback(radius);
+                }
+
+                var buffered = turfBuffer(hullSmall, radius, { units: 'kilometers' });
+                if (!buffered) {
+                    return createTerritoryFallback(radius);
+                }
+
+                return L.geoJSON(buffered, {
+                    style: {
+                        color: '#1fcfaa',
+                        fillColor: '#1fcfaa',
+                        fillOpacity: 0.08,
+                        weight: 1.5,
+                        opacity: 0.6,
+                        dashArray: '6, 5'
+                    },
+                    interactive: false
+                });
+            } catch (e) {
+                console.warn('Territory generation failed, using fallback polygon.', e);
+                return createTerritoryFallback(radius);
+            }
         }
         
         // Apply layer visibility
@@ -256,19 +452,24 @@
         }
         
         // Initialize layers if shops exist
-        if (getValidShopCoords().length > 0) {
+        mountDebugBox();
+        var validCoords = getValidShopCoords();
+        if (validCoords.length > 0) {
             shopMarkersLayer = createShopMarkers();
             territoryLayer = createTerritoryUnion(currentRadius);
             applyLayerVisibility();
             
             // Fit map to show all markers
             var bounds = L.latLngBounds([]);
-            getValidShopCoords().forEach(function(entry) {
+            validCoords.forEach(function(entry) {
                 bounds.extend([entry.lat, entry.lng]);
             });
             if (bounds.isValid()) {
                 map.fitBounds(bounds.pad(0.2));
             }
+            setDebug('shops=' + shops.length + ' valid=' + validCoords.length + ' mode=active');
+        } else {
+            setDebug('shops=' + shops.length + ' valid=0 (check latitude/longitude fields)');
         }
         
         // Toggle functionality
@@ -351,6 +552,21 @@
         window.addEventListener('resize', function() {
             setTimeout(function() { map.invalidateSize(); }, 100);
         });
+
+        // Capture runtime errors for quick diagnosis on-screen.
+        window.addEventListener('error', function(e) {
+            setDebug('JS error: ' + (e.message || 'unknown'));
+        });
+        } catch (initErr) {
+            console.error('Map init failed:', initErr);
+            var wrap = document.querySelector('.map-wrap');
+            if (wrap) {
+                var err = document.createElement('div');
+                err.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:1300;background:rgba(120,20,20,0.9);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 10px;font-size:11px;font-family:monospace;color:#ffdada;';
+                err.textContent = 'Map init failed: ' + (initErr.message || 'unknown');
+                wrap.appendChild(err);
+            }
+        }
     });
 </script>
 
