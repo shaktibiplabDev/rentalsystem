@@ -7,7 +7,7 @@
     <title>@yield('title', 'EKiraya')</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('css/public-site.css') }}">
     @stack('head')
 </head>
@@ -17,8 +17,11 @@
 @endphp
 <header class="site-header" id="siteHeader">
     <div class="utility-bar">
-        <p>Built for Indian vehicle rental operators.</p>
-        <a href="{{ route('admin.login') }}" rel="nofollow">Partner Login</a>
+        <div class="utility-pill">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            Built for high-volume Indian vehicle rental operations
+        </div>
+        <a href="{{ route('contact') }}" class="utility-link">Talk to Sales</a>
     </div>
     <nav class="main-nav">
         <a class="brand" href="{{ route('home') }}" aria-label="EKiraya Home">EKiraya</a>
@@ -26,9 +29,9 @@
         <ul class="nav-links" id="mainNavLinks">
             <li><a href="{{ route('home') }}">Home</a></li>
             <li><a href="{{ route('home') }}#features">Features</a></li>
-            <li><a href="{{ route('home') }}#workflow">How It Works</a></li>
+            <li><a href="{{ route('home') }}#workflow">Workflow</a></li>
             <li><a href="{{ route('contact') }}">Contact</a></li>
-            <li><a class="btn btn-nav" href="{{ route('contact') }}">Book a Demo</a></li>
+            <li><a class="btn btn-nav" href="{{ route('contact') }}">Book Demo</a></li>
         </ul>
     </nav>
 </header>
@@ -41,13 +44,13 @@
     <div class="footer-grid">
         <section>
             <h4>EKiraya</h4>
-            <p>A practical operations platform for rental teams that need speed, control, and audit-ready records.</p>
+            <p>Precision operations platform for rental teams that want reliable workflow control and long-term scalability.</p>
         </section>
         <section>
-            <h4>Platform</h4>
-            <a href="{{ route('home') }}#features">Features</a>
+            <h4>Product</h4>
+            <a href="{{ route('home') }}#features">Capabilities</a>
             <a href="{{ route('home') }}#workflow">How It Works</a>
-            <a href="{{ route('contact') }}">Book a Demo</a>
+            <a href="{{ route('contact') }}">Book a Live Demo</a>
         </section>
         <section>
             <h4>Legal</h4>
@@ -61,7 +64,7 @@
             <h4>Contact</h4>
             <a href="mailto:support@ekiraya.com">support@ekiraya.com</a>
             <a href="tel:+919876543210">+91 98765 43210</a>
-            <a href="{{ route('admin.login') }}" rel="nofollow">Internal Partner Access</a>
+            <a href="{{ route('contact') }}">Enterprise Assistance</a>
         </section>
     </div>
     <div class="footer-bottom">

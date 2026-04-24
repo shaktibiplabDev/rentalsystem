@@ -5,8 +5,8 @@
 
 @section('content')
 <section class="section">
-    <div class="container">
-        <div class="legal-shell">
+    <div class="container" data-reveal>
+        <div class="legal-shell" data-reveal>
             <span class="eyebrow">Legal</span>
             <h1 style="margin-top:12px; font-size: clamp(1.6rem, 3.5vw, 2.45rem);">{{ $page['title'] ?? 'Legal Page' }}</h1>
             @if(!empty($page['published_at']))

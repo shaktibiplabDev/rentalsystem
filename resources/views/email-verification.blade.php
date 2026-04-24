@@ -5,8 +5,8 @@
 
 @section('content')
 <section class="section">
-    <div class="container status-wrap">
-        <article class="status-card">
+    <div class="container status-wrap" data-reveal>
+        <article class="status-card" data-reveal>
             <span class="pill {{ $success ? 'ok' : 'bad' }}">{{ $success ? 'Verification Complete' : 'Verification Failed' }}</span>
             <h1 style="font-size: clamp(1.5rem, 3vw, 2.2rem); margin-bottom:10px;">{{ $title }}</h1>
             <p style="max-width:52ch; margin:0 auto;">{{ $message }}</p>

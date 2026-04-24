@@ -22,19 +22,55 @@ class WebSecurityHeaders
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
         }
 
-        $response->headers->set('Content-Security-Policy', $this->csp());
+        $response->headers->set('Content-Security-Policy', $this->csp($request));
 
         return $response;
     }
 
-    private function csp(): string
+    private function csp(Request $request): string
     {
+        $isAdminRoute = $request->is('admin') || $request->is('admin/*');
+
+        $scriptSrc = [
+            "'self'",
+            "'unsafe-inline'",
+            'https://cdn.jsdelivr.net',
+            'https://unpkg.com',
+        ];
+
+        $styleSrc = [
+            "'self'",
+            "'unsafe-inline'",
+            'https://fonts.googleapis.com',
+            'https://cdnjs.cloudflare.com',
+            'https://unpkg.com',
+        ];
+
+        $fontSrc = [
+            "'self'",
+            'https://fonts.gstatic.com',
+            'https://cdnjs.cloudflare.com',
+            'data:',
+        ];
+
+        $imgSrc = [
+            "'self'",
+            'data:',
+            'https:',
+        ];
+
+        // Admin dashboard uses Leaflet map tiles.
+        if ($isAdminRoute) {
+            $imgSrc[] = 'https://*.basemaps.cartocdn.com';
+            $imgSrc[] = 'https://*.tile.openstreetmap.org';
+        }
+
         return implode('; ', [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "font-src 'self' https://fonts.gstatic.com data:",
-            "img-src 'self' data: https:",
+            'script-src '.implode(' ', $scriptSrc),
+            'style-src '.implode(' ', $styleSrc),
+            'font-src '.implode(' ', $fontSrc),
+            'img-src '.implode(' ', array_unique($imgSrc)),
             "connect-src 'self'",
             "frame-ancestors 'none'",
             "form-action 'self'",

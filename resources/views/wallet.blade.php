@@ -5,8 +5,8 @@
 
 @section('content')
 <section class="section">
-    <div class="container status-wrap">
-        <div class="status-card">
+    <div class="container status-wrap" data-reveal>
+        <div class="status-card" data-reveal>
             <div id="walletLoader" class="spinner" aria-hidden="true"></div>
             <div id="walletResult" class="hidden">
                 <span id="walletPill" class="pill">Status</span>

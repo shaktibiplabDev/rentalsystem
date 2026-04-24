@@ -5,7 +5,7 @@
 
 @section('content')
 <section class="section">
-    <div class="container">
+    <div class="container" data-reveal>
         <span class="eyebrow">Contact</span>
         <h1 style="margin-top:12px; font-size: clamp(1.8rem, 4.2vw, 3rem);">Let’s plan your rollout.</h1>
         <p style="margin-top:10px; max-width: 70ch;">
@@ -13,7 +13,7 @@
         </p>
 
         <div class="contact-layout" style="margin-top:22px;">
-            <section class="panel">
+            <section class="panel" data-reveal>
                 @if(session('success'))
                     <div class="alert alert-ok">{{ session('success') }}</div>
                 @endif
@@ -69,7 +69,7 @@
                 </form>
             </section>
 
-            <section class="panel" style="display:grid; gap:14px; align-content:start;">
+            <section class="panel" style="display:grid; gap:14px; align-content:start;" data-reveal>
                 <h2 style="font-size:1.4rem;">Support window</h2>
                 <p>Monday to Saturday, 10:00 AM to 7:00 PM (IST)</p>
                 <p><strong>Email:</strong> support@ekiraya.com</p>
