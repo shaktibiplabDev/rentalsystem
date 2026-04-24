@@ -18,19 +18,12 @@
     
     <form method="POST" action="{{ route('logout') }}" id="logout-form" style="display:none;">@csrf</form>
     
-    <!-- Red Cross Logout Button -->
-    <button onclick="document.getElementById('logout-form').submit();" class="logout-btn" title="Logout" style="background: rgba(240, 68, 90, 0.15); border: 1px solid rgba(240, 68, 90, 0.3); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; margin-left: 8px;">
-        <i class="fas fa-times" style="color: #f0445a; font-size: 14px;"></i>
+    <button onclick="document.getElementById('logout-form').submit();" class="logout-btn" title="Logout">
+        <i class="fas fa-arrow-right-from-bracket"></i>
     </button>
 </header>
 
 <style>
-.logout-btn:hover {
-    background: rgba(240, 68, 90, 0.25) !important;
-    border-color: rgba(240, 68, 90, 0.5) !important;
-    transform: scale(1.02);
-}
-
 /* Fix: Ensure search box appears above map */
 .search-box {
     position: relative;

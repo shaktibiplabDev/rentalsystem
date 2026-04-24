@@ -96,7 +96,7 @@
                             @endphp
                             @forelse($legalPages as $page)
                             <tr>
-                                </td><i class="{{ $page->icon }}"></i></td>
+                                <td><i class="{{ $page->icon }}"></i></td>
                                 <td>{{ $page->title }}</td>
                                 <td class="tbl-mono">{{ $page->slug }}</td>
                                 <td class="tbl-mono">v{{ $page->version }}</td>
