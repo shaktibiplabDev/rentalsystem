@@ -7,6 +7,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\WebSecurityHeaders;
 use App\Http\Middleware\AuthenticateApi; // Add this
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -22,12 +23,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'security.headers' => SecurityHeaders::class,
+            'security.web' => WebSecurityHeaders::class,
             'auth.api' => AuthenticateApi::class, // Add this
         ]);
 
         // Replace the default auth middleware with our custom one for API
         $middleware->api(prepend: [
             SecurityHeaders::class,
+        ]);
+
+        $middleware->web(prepend: [
+            WebSecurityHeaders::class,
         ]);
         
         // Override the default auth middleware

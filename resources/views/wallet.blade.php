@@ -1,162 +1,100 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Status</title>
+@extends('layouts.public')
 
-    <style>
-        body {
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: #f7f9fc;
-        }
-        .card {
-            background: white;
-            border-radius: 24px;
-            padding: 32px;
-            max-width: 400px;
-            text-align: center;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        }
-        .loader {
-            border: 3px solid #e2e8f0;
-            border-top-color: #4f46e5;
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 24px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+@section('title', 'Payment Status | EKiraya')
+@section('meta_description', 'Check wallet payment status for EKiraya recharge transactions.')
 
-        button {
-            background: #4f46e5;
-            color: white;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 40px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 24px;
-        }
-
-        .hidden { display: none; }
-    </style>
-</head>
-
-<body>
-<div class="card">
-    <div id="loader" class="loader"></div>
-
-    <div id="result" class="hidden">
-        <h1 id="title"></h1>
-        <p id="message" style="margin: 16px 0;"></p>
-        <button onclick="closeWindow()">Continue</button>
+@section('content')
+<section class="section">
+    <div class="container status-wrap">
+        <div class="status-card">
+            <div id="walletLoader" class="spinner" aria-hidden="true"></div>
+            <div id="walletResult" class="hidden">
+                <span id="walletPill" class="pill">Status</span>
+                <h1 id="walletTitle" style="font-size:1.8rem; margin-bottom:8px;">Checking payment</h1>
+                <p id="walletMessage" style="max-width:52ch; margin:0 auto;"></p>
+                <button id="walletContinue" class="btn btn-primary" style="margin-top:18px;" type="button">Continue</button>
+            </div>
+        </div>
     </div>
-</div>
+</section>
+@endsection
 
+@push('scripts')
 <script>
-    function closeWindow() {
-        window.location.href = 'yourapp://close';
-        setTimeout(() => window.close(), 200);
-    }
+    (() => {
+        const loader = document.getElementById('walletLoader');
+        const result = document.getElementById('walletResult');
+        const title = document.getElementById('walletTitle');
+        const message = document.getElementById('walletMessage');
+        const pill = document.getElementById('walletPill');
+        const button = document.getElementById('walletContinue');
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const orderId = urlParams.get('order_id');
+        const closeWindow = () => {
+            window.location.href = 'yourapp://close';
+            setTimeout(() => window.close(), 250);
+        };
 
-    if (!orderId) {
-        showResult('⚠️ Missing Order ID', 'No order ID found.');
-    } else {
-        checkStatus(orderId);
-    }
+        button.addEventListener('click', closeWindow);
 
-    let retryCount = 0;
-    const MAX_RETRIES = 5;
+        const showResult = (state, heading, bodyText) => {
+            loader.classList.add('hidden');
+            result.classList.remove('hidden');
 
-    function checkStatus(orderId) {
+            title.textContent = heading;
+            message.textContent = bodyText;
 
-        fetch(`${window.location.origin}/api/wallet/payment-status?order_id=${encodeURIComponent(orderId)}`)
-            .then(async (response) => {
+            pill.textContent = state === 'ok' ? 'Payment Success' : 'Payment Update';
+            pill.classList.remove('ok', 'bad');
+            pill.classList.add(state === 'ok' ? 'ok' : 'bad');
+        };
 
-                const text = await response.text();
+        const params = new URLSearchParams(window.location.search);
+        const orderId = params.get('order_id');
 
-                // 🔥 DEBUG (remove later)
-                console.log("RAW RESPONSE:", text);
+        if (!orderId) {
+            showResult('bad', 'Missing order reference', 'Order ID is not present in this URL.');
+            return;
+        }
 
-                let data;
-                try {
-                    data = JSON.parse(text);
-                } catch (e) {
-                    throw new Error("Invalid JSON response");
+        let retries = 0;
+        const maxRetries = 5;
+
+        const checkStatus = async () => {
+            try {
+                const endpoint = `${window.location.origin}/api/wallet/payment-status?order_id=${encodeURIComponent(orderId)}`;
+                const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
+                const data = await response.json();
+
+                if (!data || !data.success || !data.data || !data.data.status) {
+                    throw new Error('Unexpected payment response.');
                 }
 
-                return data;
-            })
-            .then(data => {
-
-                if (!data.success) {
-                    throw new Error("API returned failure");
-                }
-
-                const status = data.data.status;
-
-                // ✅ SUCCESS
+                const status = String(data.data.status).toLowerCase();
                 if (status === 'completed') {
-                    showResult(
-                        '✅ Payment Successful!',
-                        `₹${data.data.amount} added to your wallet`
-                    );
-
-                    setTimeout(closeWindow, 2000);
+                    const amount = data.data.amount ?? '';
+                    showResult('ok', 'Payment successful', `Amount ₹${amount} has been added to your wallet.`);
+                    setTimeout(closeWindow, 1800);
                     return;
                 }
 
-                // ❌ FAILED
                 if (status === 'failed') {
-                    showResult(
-                        '❌ Payment Failed',
-                        'Your payment could not be processed.'
-                    );
+                    showResult('bad', 'Payment failed', 'The transaction did not complete. Please retry from the app.');
                     return;
                 }
 
-                // ⏳ PENDING
-                if (status === 'pending') {
-
-                    if (retryCount < MAX_RETRIES) {
-                        retryCount++;
-                        setTimeout(() => checkStatus(orderId), 3000);
-                    } else {
-                        showResult(
-                            '⏳ Taking longer than expected',
-                            'Please check your wallet manually.'
-                        );
-                    }
+                if (status === 'pending' && retries < maxRetries) {
+                    retries += 1;
+                    setTimeout(checkStatus, 2500);
+                    return;
                 }
 
-            })
-            .catch(error => {
-                console.error("Fetch Error:", error);
+                showResult('bad', 'Payment pending', 'The transaction is still pending. Please recheck from the app wallet shortly.');
+            } catch (error) {
+                showResult('bad', 'Status unavailable', 'We could not verify your payment right now. Please check wallet balance in the app.');
+            }
+        };
 
-                showResult(
-                    '⚠️ Something went wrong',
-                    'Unable to verify payment. Please check wallet.'
-                );
-            });
-    }
-
-    function showResult(title, message) {
-        document.getElementById('loader').classList.add('hidden');
-        document.getElementById('result').classList.remove('hidden');
-
-        document.getElementById('title').innerHTML = title;
-        document.getElementById('message').innerText = message;
-    }
+        checkStatus();
+    })();
 </script>
-</body>
-</html>
+@endpush

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\LegalPageController;
+use App\Http\Controllers\Web\ContactController;
 use App\Http\Controllers\Web\EmailVerificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,8 @@ Route::get('/', [LandingController::class, 'index'])->name('home');
 
 // Email verification landing page (web)
 Route::get('/email/verify/{token}', [EmailVerificationController::class, 'verifyToken'])
+    ->middleware('throttle:20,1')
+    ->where('token', '[A-Za-z0-9]{60}')
     ->name('verification.verify');
 
 // Wallet landing page (if you have a Blade view)
@@ -37,13 +40,16 @@ Route::get('/media/{path}', function (string $path) {
 
     return response()->file(Storage::disk('public')->path($path), [
         'Cache-Control' => 'public, max-age=86400',
+        'X-Content-Type-Options' => 'nosniff',
     ]);
 })->where('path', '.*')->name('media.public');
 
 // =============================================
 // LEGAL PAGES (Database driven)
 // =============================================
-Route::get('/legal/{slug}', [LegalPageController::class, 'show'])->name('legal.page');
+Route::get('/legal/{slug}', [LegalPageController::class, 'show'])
+    ->where('slug', '[a-z0-9-]+')
+    ->name('legal.page');
 
 // =============================================
 // ADMIN AUTHENTICATION (NO MIDDLEWARE)
@@ -112,15 +118,10 @@ Route::middleware(['admin'])->prefix('admin')->name('admin.')->group(function ()
     Route::post('legal-pages/{id}/toggle', [AdminLegalPageController::class, 'toggleStatus'])->name('legal-pages.toggle');
 });
 
-// Contact page
-Route::get('/contact', function () {
-    return view('contact');
-})->name('contact');
-
-Route::post('/contact', function (Request $request) {
-    // Here you can send email notification, save to database, etc.
-    return redirect()->back()->with('success', 'Thank you for reaching out. We will get back to you soon!');
-})->name('contact.submit');
+Route::get('/contact', [ContactController::class, 'show'])->name('contact');
+Route::post('/contact', [ContactController::class, 'submit'])
+    ->middleware('throttle:6,1')
+    ->name('contact.submit');
 
 // =============================================
 // LEGACY LOGOUT (kept for compatibility)
