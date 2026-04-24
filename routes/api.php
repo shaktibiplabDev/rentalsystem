@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\LegalPageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -401,6 +402,17 @@ Route::prefix('webhooks/cashfree')->group(function () {
 
     // Optional additional health check
     Route::get('/health', [WebhookController::class, 'healthCheck']);
+});
+
+// Legal Pages API for Mobile App
+Route::prefix('legal')->group(function () {
+    Route::get('/pages', [LegalPageController::class, 'index'])
+        ->name('api.legal.pages')
+        ->middleware('throttle:60,1'); // 60 requests per minute
+
+    Route::get('/pages/{slug}', [LegalPageController::class, 'show'])
+        ->name('api.legal.page.show')
+        ->middleware('throttle:60,1');
 });
 
 // =============================================
