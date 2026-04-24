@@ -74,11 +74,11 @@
                     <div class="mcard">
                         <div class="ml">Platform Profit</div>
                         <div class="mv mv-green">₹{{ number_format($platformProfit ?? 0, 2) }}</div>
-                        <div class="ms">From verifications</div>
+                        <div class="ms">{{ $freshVerifications ?? 0 }} fresh · {{ $cachedVerifications ?? 0 }} cached</div>
                     </div>
                     <div class="mcard">
                         <div class="ml">Total Rentals</div>
-                        <div class="mv mv-accent">{{ \App\Models\Rental::count() }}</div>
+                        <div class="mv mv-accent">{{ $totalRentals ?? 0 }}</div>
                         <div class="ms">All time</div>
                     </div>
                 </div>

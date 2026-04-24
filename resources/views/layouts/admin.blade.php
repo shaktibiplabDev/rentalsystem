@@ -210,7 +210,9 @@
             border-bottom: 1px solid var(--border);
             background: rgba(5, 9, 19, 0.88);
             backdrop-filter: blur(24px);
-            z-index: 50;
+            position: relative;
+            z-index: 3000;
+            overflow: visible;
         }
 
         .brand {
@@ -1129,6 +1131,7 @@
         .map-wrap {
             position: relative;
             flex: 1;
+            z-index: 1;
         }
 
         #leafletMap {
@@ -1717,6 +1720,9 @@
         .settings-content {
             padding: 24px 28px;
             overflow-y: auto;
+            display: grid;
+            gap: 16px;
+            align-content: start;
         }
 
         .settings-content::-webkit-scrollbar {
@@ -1728,8 +1734,14 @@
         }
 
         .settings-section {
-            max-width: 600px;
-            margin-bottom: 32px;
+            max-width: none;
+            width: 100%;
+            margin-bottom: 0;
+            background: rgba(7, 11, 24, 0.72);
+            border: 1px solid var(--border);
+            border-radius: var(--r);
+            padding: 18px;
+            box-shadow: var(--shadow-soft);
         }
 
         .ss-title {
@@ -1944,9 +1956,11 @@
 
         .profile-grid {
             display: grid;
-            grid-template-columns: 300px 1fr;
+            grid-template-columns: 320px minmax(0, 1fr);
             gap: 16px;
-            max-width: 980px;
+            max-width: none;
+            width: 100%;
+            align-items: start;
         }
 
         .profile-card {

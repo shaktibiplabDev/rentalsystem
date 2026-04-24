@@ -6,25 +6,29 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Customer;
 use App\Models\Rental;
-use App\Models\WalletTransaction;
-use Carbon\Carbon;
-
 class ProfileController extends Controller
 {
     public function index()
     {
-        // Fix: Use 'user' role instead of 'owner'
         $totalShops = User::where('role', 'user')->count();
-        
         $totalCustomers = Customer::count();
-        $totalVerifications = Rental::whereNotNull('verification_completed_at')->count();
-        
-        // Get platform profit
-        $freshVerifications = Rental::where('is_verification_cached', false)->count();
-        $cachedVerifications = Rental::where('is_verification_cached', true)->count();
+
+        $verificationQuery = Rental::whereNotNull('verification_completed_at');
+        $totalVerifications = (clone $verificationQuery)->count();
+        $freshVerifications = (clone $verificationQuery)
+            ->where(function ($q) {
+                $q->where('is_verification_cached', false)
+                    ->orWhereNull('is_verification_cached');
+            })
+            ->count();
+        $cachedVerifications = (clone $verificationQuery)
+            ->where('is_verification_cached', true)
+            ->count();
+
         $platformProfit = ($freshVerifications * 1) + ($cachedVerifications * 3);
-        
-        // Get recent activities from logs
+
+        $totalRentals = Rental::count();
+
         $activities = [
             [
                 'color' => 'var(--green)', 
@@ -37,12 +41,26 @@ class ProfileController extends Controller
                 'time' => now()->format('d M Y, h:i A')
             ],
             [
+                'color' => 'var(--purple)',
+                'text' => "Verification split: {$freshVerifications} fresh · {$cachedVerifications} cached",
+                'time' => now()->format('d M Y, h:i A')
+            ],
+            [
                 'color' => 'var(--amber)', 
                 'text' => 'Total verifications: ' . $totalVerifications, 
                 'time' => now()->format('d M Y, h:i A')
             ],
         ];
-        
-        return view('admin.profile', compact('totalShops', 'totalCustomers', 'totalVerifications', 'activities'));
+
+        return view('admin.profile', compact(
+            'totalShops',
+            'totalCustomers',
+            'totalVerifications',
+            'freshVerifications',
+            'cachedVerifications',
+            'platformProfit',
+            'totalRentals',
+            'activities'
+        ));
     }
 }
