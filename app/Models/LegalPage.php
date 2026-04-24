@@ -10,7 +10,7 @@ class LegalPage extends Model
     protected $fillable = [
         'slug', 'title', 'icon', 'content', 'excerpt',
         'meta_title', 'meta_description', 'order', 'is_active',
-        'show_in_footer', 'published_at', 'version'
+        'show_in_footer', 'published_at', 'version',
     ];
 
     protected $casts = [
@@ -19,22 +19,24 @@ class LegalPage extends Model
         'published_at' => 'datetime',
     ];
 
-    // Get all active legal pages for footer
-    public static function getFooterPages()
+    public static function getFooterPages(): array
     {
         return Cache::remember('legal_footer_pages', 86400, function () {
             return self::where('is_active', true)
                 ->where('show_in_footer', true)
                 ->orderBy('order')
-                ->get();
+                ->get(['slug', 'title'])   // only the needed columns
+                ->toArray();
         });
     }
 
-    // Get single page by slug with caching
-    public static function getBySlug($slug)
+    public static function getBySlug($slug): ?array
     {
         return Cache::remember("legal_page_{$slug}", 86400, function () use ($slug) {
-            return self::where('slug', $slug)->where('is_active', true)->first();
+            return self::where('slug', $slug)
+                ->where('is_active', true)
+                ->first()
+                ?->toArray();   // returns array or null
         });
     }
 

@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $page->meta_title ?? $page->title }} | EKiraya</title>
-    <meta name="description" content="{{ $page->meta_description ?? '' }}">
+    <title>{{ $page['meta_title'] ?? $page['title'] ?? 'Legal' }} | EKiraya</title>
+    <meta name="description" content="{{ $page['meta_description'] ?? '' }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     @php
-        $footerPages = \App\Models\LegalPage::where('is_active', true)
-            ->where('show_in_footer', true)
-            ->orderBy('order')
-            ->get();
+        // Fetch footer pages as an array (cached)
+        $footerPages = \App\Models\LegalPage::getFooterPages();
     @endphp
     <style>
         :root {
@@ -40,11 +38,7 @@
             --transition-smooth: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             background: var(--bg-root);
@@ -70,7 +64,7 @@
             background-size: 100% 100%;
         }
 
-        /* ─── NAVIGATION ─────────────────────────── */
+        /* Navigation */
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -213,7 +207,7 @@
             color: var(--text-primary);
         }
 
-        /* ─── PAGE CONTENT ───────────────────────── */
+        /* Page Content */
         .page-container {
             max-width: 900px;
             margin: 0 auto;
@@ -338,7 +332,7 @@
             transform: translateX(-3px);
         }
 
-        /* ─── FOOTER ─────────────────────────────── */
+        /* Footer */
         .footer {
             padding: 4rem 6% 2rem;
             border-top: 1px solid var(--border-default);
@@ -415,31 +409,20 @@
             margin: 0 auto;
         }
 
-        /* ─── RESPONSIVE ─────────────────────────── */
         @media (max-width: 900px) {
             .navbar {
                 padding: 0.75rem 5%;
                 margin: 10px 2%;
                 border-radius: 40px;
             }
-            .nav-links {
-                display: none;
-            }
-            .mobile-toggle {
-                display: block;
-            }
-            .content-card {
-                padding: 1.75rem;
-            }
+            .nav-links { display: none; }
+            .mobile-toggle { display: block; }
+            .content-card { padding: 1.75rem; }
         }
 
         @media (max-width: 480px) {
-            .page-container {
-                padding: 2rem 4% 3rem;
-            }
-            .content-card {
-                padding: 1.5rem;
-            }
+            .page-container { padding: 2rem 4% 3rem; }
+            .content-card { padding: 1.5rem; }
         }
     </style>
 </head>
@@ -471,14 +454,14 @@
     <!-- Page Content -->
     <div class="page-container">
         <div class="content-card">
-            <h1 class="page-title">{{ $page->title }}</h1>
-            @if($page->published_at)
-            <div class="last-updated">
-                <i class="fas fa-clock"></i> Last Updated: {{ $page->published_at->format('F d, Y') }}
-            </div>
+            <h1 class="page-title">{{ $page['title'] ?? 'Legal Page' }}</h1>
+            @if(!empty($page['published_at']))
+                <div class="last-updated">
+                    <i class="fas fa-clock"></i> Last Updated: {{ \Carbon\Carbon::parse($page['published_at'])->format('F d, Y') }}
+                </div>
             @endif
             <div class="legal-content">
-                {!! $page->content !!}
+                {!! $page['content'] ?? '' !!}
             </div>
             <div class="back-link-wrapper">
                 <a href="/" class="back-link">
@@ -501,8 +484,8 @@
             <div class="footer-col">
                 <h4>Support</h4>
                 <a href="{{ route('contact') }}">Contact Us</a>
-                @foreach($footerPages as $page)
-                <a href="{{ route('legal.page', $page->slug) }}">{{ $page->title }}</a>
+                @foreach($footerPages as $footerPage)
+                    <a href="{{ route('legal.page', $footerPage['slug']) }}">{{ $footerPage['title'] }}</a>
                 @endforeach
             </div>
             <div class="footer-col">
@@ -522,7 +505,6 @@
     </footer>
 
     <script>
-        // Mobile nav toggle
         const mobileToggle = document.getElementById('mobileToggle');
         const mobileNav = document.getElementById('mobileNav');
         const navbar = document.getElementById('navbar');
@@ -545,7 +527,6 @@
             });
         }
 
-        // Navbar scroll effect
         window.addEventListener('scroll', () => {
             if (navbar && window.scrollY > 20) {
                 navbar.classList.add('scrolled');
