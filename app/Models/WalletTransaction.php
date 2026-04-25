@@ -18,6 +18,7 @@ class WalletTransaction extends Model
         'reason',
         'status',
         'reference_id',
+        'transfer_group_id',
         'payment_order_id',
         'payment_session_id',
         'payment_details',

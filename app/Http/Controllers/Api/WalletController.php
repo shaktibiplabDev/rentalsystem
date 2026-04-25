@@ -377,7 +377,10 @@ class WalletController extends Controller
                     ], 422);
                 }
 
-                $referenceId = $this->generateReferenceId();
+                // Generate unique IDs for this transfer
+                $transferGroupId = $this->generateTransferGroupId();
+                $debitReferenceId = $this->generateUniqueReferenceId();
+                $creditReferenceId = $this->generateUniqueReferenceId();
 
                 // Atomic deduction from sender
                 $senderUpdated = User::where('id', $sender->id)
@@ -401,22 +404,26 @@ class WalletController extends Controller
                 $sender->refresh();
                 $recipient->refresh();
 
+                // Create debit transaction for sender
                 $debitTransaction = WalletTransaction::create([
                     'user_id' => $sender->id,
                     'amount' => $amount,
                     'type' => 'debit',
                     'reason' => 'Transfer to '.$recipient->phone.': '.$reason,
-                    'reference_id' => $referenceId,
+                    'reference_id' => $debitReferenceId,
+                    'transfer_group_id' => $transferGroupId,
                     'status' => 'completed',
                     'notes' => $notes,
                 ]);
 
+                // Create credit transaction for recipient
                 $creditTransaction = WalletTransaction::create([
                     'user_id' => $recipient->id,
                     'amount' => $amount,
                     'type' => 'credit',
                     'reason' => 'Transfer from '.$sender->phone.': '.$reason,
-                    'reference_id' => $referenceId,
+                    'reference_id' => $creditReferenceId,
+                    'transfer_group_id' => $transferGroupId,
                     'status' => 'completed',
                     'notes' => $notes,
                 ]);
@@ -447,7 +454,9 @@ class WalletController extends Controller
                     'sender_id' => $sender->id,
                     'recipient_id' => $recipient->id,
                     'amount' => $amount,
-                    'reference_id' => $referenceId,
+                    'transfer_group_id' => $transferGroupId,
+                    'debit_reference_id' => $debitReferenceId,
+                    'credit_reference_id' => $creditReferenceId,
                     'ip' => $request->ip(),
                 ]);
 
@@ -459,7 +468,9 @@ class WalletController extends Controller
                         'formatted_amount' => '₹'.number_format($amount, 2),
                         'recipient_phone' => $recipient->phone,
                         'recipient_name' => $recipient->name,
-                        'reference_id' => $referenceId,
+                        'transfer_group_id' => $transferGroupId,
+                        'debit_transaction_id' => $debitTransaction->id,
+                        'credit_transaction_id' => $creditTransaction->id,
                         'new_balance' => (float) $sender->wallet_balance,
                         'formatted_balance' => '₹'.number_format($sender->wallet_balance, 2),
                     ],
@@ -467,6 +478,21 @@ class WalletController extends Controller
 
             } catch (QueryException $e) {
                 DB::rollBack();
+                
+                // Handle duplicate reference ID error specifically
+                if ($e->getCode() == 23000 && str_contains($e->getMessage(), 'reference_id')) {
+                    Log::error('Duplicate reference ID error', [
+                        'user_id' => auth()->id(),
+                        'error' => $e->getMessage(),
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to transfer money due to technical issue. Please try again.',
+                        'error' => 'Duplicate transaction reference. Please retry.',
+                    ], 409); // 409 Conflict
+                }
+                
                 throw $e;
             }
 
@@ -486,6 +512,7 @@ class WalletController extends Controller
             Log::error('Database error transferring money', [
                 'user_id' => auth()->id(),
                 'error_code' => $e->getCode(),
+                'error_message' => $e->getMessage(),
             ]);
 
             return response()->json([
@@ -837,9 +864,29 @@ class WalletController extends Controller
                 ], 500);
             }
 
+            // If this transaction has a transfer_group_id, also fetch the linked transaction
+            $linkedTransaction = null;
+            if ($transaction->transfer_group_id) {
+                $linked = WalletTransaction::where('transfer_group_id', $transaction->transfer_group_id)
+                    ->where('user_id', '!=', $user->id)
+                    ->first();
+                
+                if ($linked) {
+                    $linkedTransaction = [
+                        'id' => $linked->id,
+                        'user_id' => $linked->user_id,
+                        'amount' => (float) $linked->amount,
+                        'type' => $linked->type,
+                        'created_at' => $linked->created_at,
+                    ];
+                }
+            }
+
             return response()->json([
                 'success' => true,
-                'data' => $this->formatTransaction($transaction),
+                'data' => array_merge($this->formatTransaction($transaction), [
+                    'linked_transaction' => $linkedTransaction,
+                ]),
             ], 200);
 
         } catch (Exception $e) {
@@ -972,7 +1019,7 @@ class WalletController extends Controller
      */
     private function formatTransaction($transaction): array
     {
-        return [
+        $data = [
             'id' => $transaction->id,
             'amount' => (float) $transaction->amount,
             'formatted_amount' => '₹'.number_format($transaction->amount, 2),
@@ -992,6 +1039,13 @@ class WalletController extends Controller
             'created_at_human' => $transaction->created_at->diffForHumans(),
             'updated_at' => $transaction->updated_at,
         ];
+        
+        // Add transfer_group_id if it exists
+        if ($transaction->transfer_group_id) {
+            $data['transfer_group_id'] = $transaction->transfer_group_id;
+        }
+        
+        return $data;
     }
 
     /**
@@ -1119,11 +1173,49 @@ class WalletController extends Controller
     }
 
     /**
-     * Generate unique reference ID
+     * Generate unique reference ID with collision checking
      */
-    private function generateReferenceId(): string
+    private function generateUniqueReferenceId(): string
     {
-        return 'TXN_'.strtoupper(uniqid()).'_'.date('YmdHis').'_'.bin2hex(random_bytes(4));
+        $maxAttempts = 5;
+        
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            // Add more entropy for uniqueness
+            $referenceId = 'TXN_' . 
+                strtoupper(uniqid('', true)) . '_' . 
+                date('YmdHis') . '_' . 
+                bin2hex(random_bytes(8)); // Increased from 4 to 8 bytes for more uniqueness
+            
+            // Check if this reference ID already exists
+            $exists = WalletTransaction::where('reference_id', $referenceId)->exists();
+            
+            if (!$exists) {
+                return $referenceId;
+            }
+            
+            // Log warning if collision occurs
+            Log::warning('Reference ID collision detected, retrying', [
+                'attempt' => $attempt + 1,
+                'collision_id' => $referenceId,
+            ]);
+        }
+        
+        // If we still have a collision after max attempts, add microtime with higher precision
+        $finalAttempt = 'TXN_' . 
+            strtoupper(uniqid('', true)) . '_' . 
+            date('YmdHis') . '_' . 
+            bin2hex(random_bytes(12)) . '_' . 
+            microtime(true);
+        
+        return $finalAttempt;
+    }
+    
+    /**
+     * Generate transfer group ID to link debit and credit transactions
+     */
+    private function generateTransferGroupId(): string
+    {
+        return 'TRF_GRO_' . strtoupper(uniqid('', true)) . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(8));
     }
 
     /**
@@ -1137,7 +1229,6 @@ class WalletController extends Controller
                 'title' => $data['title'],
                 'message' => $data['message'],
                 'type' => $data['type'],
-                'data' => json_encode($data['data'] ?? []),
                 'is_read' => false,
                 'created_at' => now(),
             ]);
