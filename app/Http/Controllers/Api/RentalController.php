@@ -243,7 +243,7 @@ class RentalController extends Controller
                     'user_id' => $lockedUser->id,
                     'amount' => $verificationPrice,
                     'type' => 'debit',
-                    'reason' => 'DL verification '.($isFromCache ? '(CACHED)' : '(FRESH)').' - DL: '.$dlNumber,
+                    'reason' => 'DL verification '.' - DL: '.$dlNumber,
                     'status' => 'completed',
                     'reference_id' => $this->generateReferenceId(),
                     'metadata' => json_encode([
