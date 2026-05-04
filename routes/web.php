@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\AdminForgotPasswordController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\LegalPageController;
@@ -58,6 +59,20 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [AdminLoginController::class, 'login']);
     Route::post('/logout', [AdminLoginController::class, 'logout'])->name('logout');
+
+    // Forgot Password Routes
+    Route::get('/forgot-password', [AdminForgotPasswordController::class, 'showForgotForm'])
+        ->middleware('guest')
+        ->name('password.request');
+    Route::post('/forgot-password', [AdminForgotPasswordController::class, 'sendResetLink'])
+        ->middleware('guest')
+        ->name('password.email');
+    Route::get('/reset-password/{token}', [AdminForgotPasswordController::class, 'showResetForm'])
+        ->middleware('guest')
+        ->name('password.reset');
+    Route::post('/reset-password', [AdminForgotPasswordController::class, 'resetPassword'])
+        ->middleware('guest')
+        ->name('password.update');
 });
 
 // =============================================

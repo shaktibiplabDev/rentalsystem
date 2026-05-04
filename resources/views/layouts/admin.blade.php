@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Vite removed – using static CSS inline -->
     <style>
         /* ─── TOKENS ─────────────────────────────────────────── */
@@ -2104,6 +2105,146 @@
         };
     </script>
     <script src="{{ asset('js/admin.js') }}"></script>
+
+    {{-- Toast Notification System --}}
+    <script>
+        // Toast configuration
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 5000,
+            timerProgressBar: true,
+            background: '#0a1222',
+            color: '#e2efff',
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer)
+                toast.addEventListener('mouseleave', Swal.resumeTimer)
+            }
+        });
+
+        // Show session messages as toasts
+        @if(session('success'))
+            Toast.fire({
+                icon: 'success',
+                title: '{{ session('success') }}'
+            });
+        @endif
+
+        @if(session('error'))
+            Toast.fire({
+                icon: 'error',
+                title: '{{ session('error') }}'
+            });
+        @endif
+
+        @if(session('warning'))
+            Toast.fire({
+                icon: 'warning',
+                title: '{{ session('warning') }}'
+            });
+        @endif
+
+        @if(session('info'))
+            Toast.fire({
+                icon: 'info',
+                title: '{{ session('info') }}'
+            });
+        @endif
+
+        // Helper function to show toast messages
+        window.showToast = function(type, message) {
+            Toast.fire({
+                icon: type,
+                title: message
+            });
+        };
+
+        // Helper function to show error modal
+        window.showErrorModal = function(title, message) {
+            Swal.fire({
+                icon: 'error',
+                title: title || 'Error',
+                text: message || 'An error occurred',
+                background: '#0a1222',
+                color: '#e2efff',
+                confirmButtonColor: '#4f6ef7',
+                confirmButtonText: 'OK'
+            });
+        };
+
+        // Helper function to show success modal
+        window.showSuccessModal = function(title, message, callback) {
+            Swal.fire({
+                icon: 'success',
+                title: title || 'Success',
+                text: message || 'Operation completed successfully',
+                background: '#0a1222',
+                color: '#e2efff',
+                confirmButtonColor: '#4f6ef7',
+                confirmButtonText: 'OK'
+            }).then((result) => {
+                if (callback && result.isConfirmed) {
+                    callback();
+                }
+            });
+        };
+
+        // Helper function to show confirmation dialog
+        window.showConfirmDialog = function(title, text, confirmCallback, cancelCallback) {
+            Swal.fire({
+                title: title || 'Are you sure?',
+                text: text || 'This action cannot be undone',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f35b6f',
+                cancelButtonColor: '#62708c',
+                confirmButtonText: 'Yes, proceed',
+                cancelButtonText: 'Cancel',
+                background: '#0a1222',
+                color: '#e2efff'
+            }).then((result) => {
+                if (result.isConfirmed && confirmCallback) {
+                    confirmCallback();
+                } else if (!result.isConfirmed && cancelCallback) {
+                    cancelCallback();
+                }
+            });
+        };
+
+        // Global error handler for AJAX requests
+        window.handleApiError = function(error, customMessage) {
+            console.error('API Error:', error);
+
+            let message = customMessage || 'An error occurred while processing your request';
+
+            if (error.message) {
+                message = error.message;
+            } else if (typeof error === 'string') {
+                message = error;
+            }
+
+            // Check if it's a server error response
+            if (error.response) {
+                try {
+                    const data = JSON.parse(error.response);
+                    if (data.message) {
+                        message = data.message;
+                    }
+                    if (data.error) {
+                        message = data.error;
+                    }
+                } catch (e) {
+                    // Not JSON, use status text
+                    if (error.statusText) {
+                        message = error.statusText;
+                    }
+                }
+            }
+
+            showErrorModal('Error', message);
+        };
+    </script>
     @stack('scripts')
 </body>
 </html>
