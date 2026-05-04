@@ -126,7 +126,9 @@ Route::middleware(['admin'])->prefix('admin')->name('admin.')->group(function ()
     
     // Profile
     Route::get('/profile', [ProfileController::class, 'index'])->name('profile');
-    
+    Route::post('/profile/update', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+
     // Legal Pages Management (CRUD)
     Route::resource('legal-pages', AdminLegalPageController::class);
     Route::delete('legal-pages/{id}', [AdminLegalPageController::class, 'destroy'])->name('legal-pages.destroy');
