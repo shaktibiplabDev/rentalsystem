@@ -8,11 +8,6 @@
             {{-- Brand --}}
             <div class="col-span-2 md:col-span-1">
                 <a href="{{ route('home') }}" class="flex items-center gap-2 mb-4">
-                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                        </svg>
-                    </div>
                     <span class="text-lg font-bold text-white">EKiraya</span>
                 </a>
                 <p class="text-gray-400 text-sm leading-relaxed">

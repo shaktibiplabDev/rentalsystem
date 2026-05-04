@@ -204,11 +204,59 @@
                 animation-iteration-count: 1 !important;
                 transition-duration: 0.01ms !important;
             }
-            
+
             .fade-in {
                 opacity: 1;
                 transform: none;
             }
+        }
+
+        /* Alpine.js cloak - hide elements before Alpine loads */
+        [x-cloak] {
+            display: none !important;
+        }
+
+        /* Touch manipulation for mobile buttons */
+        .touch-manipulation {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Mobile menu animations */
+        .animate-menu-in {
+            animation: menuSlideDown 0.3s ease-out;
+        }
+
+        .animate-menu-out {
+            animation: menuSlideUp 0.2s ease-in;
+        }
+
+        @keyframes menuSlideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px) scaleY(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scaleY(1);
+            }
+        }
+
+        @keyframes menuSlideUp {
+            from {
+                opacity: 1;
+                transform: translateY(0) scaleY(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-10px) scaleY(0.95);
+            }
+        }
+
+        /* Mobile menu backdrop blur */
+        [data-mobile-menu] {
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
         }
     </style>
     
@@ -246,8 +294,71 @@
                 observer.observe(el);
             });
         });
+
+        // Mobile menu toggle - vanilla JS (more reliable than Alpine)
+        document.addEventListener('DOMContentLoaded', function() {
+            const menuBtn = document.querySelector('[data-mobile-menu-toggle]');
+            const mobileMenu = document.querySelector('[data-mobile-menu]');
+
+            if (menuBtn && mobileMenu) {
+                menuBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isHidden = mobileMenu.classList.contains('hidden');
+
+                    if (isHidden) {
+                        // Open menu
+                        mobileMenu.classList.remove('hidden');
+                        mobileMenu.classList.add('animate-menu-in');
+                        menuBtn.querySelector('.icon-hamburger').classList.add('hidden');
+                        menuBtn.querySelector('.icon-close').classList.remove('hidden');
+
+                        // Animate menu items with stagger
+                        const items = mobileMenu.querySelectorAll('.mobile-menu-item');
+                        items.forEach((item, index) => {
+                            item.style.opacity = '0';
+                            item.style.transform = 'translateX(-20px)';
+                            setTimeout(() => {
+                                item.style.transition = 'all 0.3s ease';
+                                item.style.opacity = '1';
+                                item.style.transform = 'translateX(0)';
+                            }, 50 + (index * 80));
+                        });
+                    } else {
+                        // Close menu with animation
+                        mobileMenu.classList.remove('animate-menu-in');
+                        mobileMenu.classList.add('animate-menu-out');
+
+                        setTimeout(() => {
+                            mobileMenu.classList.add('hidden');
+                            mobileMenu.classList.remove('animate-menu-out');
+                            menuBtn.querySelector('.icon-hamburger').classList.remove('hidden');
+                            menuBtn.querySelector('.icon-close').classList.add('hidden');
+                        }, 200);
+                    }
+                });
+
+                // Close menu when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!mobileMenu.classList.contains('hidden') && !mobileMenu.contains(e.target) && !menuBtn.contains(e.target)) {
+                        mobileMenu.classList.add('hidden');
+                        menuBtn.querySelector('.icon-hamburger').classList.remove('hidden');
+                        menuBtn.querySelector('.icon-close').classList.add('hidden');
+                    }
+                });
+
+                // Close menu when clicking links
+                mobileMenu.querySelectorAll('a').forEach(function(link) {
+                    link.addEventListener('click', function() {
+                        mobileMenu.classList.add('hidden');
+                        menuBtn.querySelector('.icon-hamburger').classList.remove('hidden');
+                        menuBtn.querySelector('.icon-close').classList.add('hidden');
+                    });
+                });
+            }
+        });
     </script>
-    
+
     @stack('scripts')
 </body>
 </html>
